@@ -81,6 +81,17 @@
   "Connect to a remote Geiser Racket REPL." t)
 
 ;;;###autoload
+(autoload 'run-chibi "geiser-chibi" "Start a Geiser Chibi REPL." t)
+
+;;;###autoload
+(autoload 'switch-to-chibi "geiser-chibi"
+  "Start a Geiser Chibi REPL, or switch to a running one." t)
+
+;;;###autoload
+(autoload 'connect-to-chibi "geiser-chibi"
+  "Connect to a remote Geiser Chibi REPL." t)
+
+;;;###autoload
 (autoload 'geiser-mode "geiser-mode"
   "Minor mode adding Geiser REPL interaction to Scheme buffers." t)
 
@@ -109,6 +120,7 @@
         geiser-guile
         geiser-image
         geiser-racket
+        geiser-chibi
         geiser-implementation
         geiser-xref))
 
