@@ -6,9 +6,15 @@
          (output
           (with-output-to-string
             (lambda ()
-              (with-error-output-to-port (current-output-port)
-                                         (lambda () (set! result (thunk))))))))
-    (write (list (cons 'result result) (cons 'output output)))
+              (with-error-output-to-port 
+               (current-output-port)
+               (lambda () (set! result (thunk))))))))
+
+    ; Hacks
+    (set! result (with-output-to-string (lambda () (write result))))
+
+    (write `((result ,result)
+             (output ,output)))
     (newline)))
 
 (define-syntax define-toplevel-for-geiser
@@ -52,21 +58,22 @@
 (define-toplevel-for-geiser geiser-completions 
   (let* ((prefix (get-arg))
          (re (regexp (string-append "^" (regexp-escape prefix)))))
-    (sort! (map symbol->string
+    (sort! (map ->string
                 (apropos-list re #:macros? #t))
            string<?)))
 
 (define-toplevel-for-geiser geiser-module-completions
   (let* ((prefix (get-arg))
          (re (regexp (string-append "^" (regexp-escape prefix)))))
-    (sort! (map symbol->string
+    (sort! (map ->string
                 (apropos-list re #:macros? #t))
            string<?)))
 
+;; TODO: Make this work
 (define-toplevel-for-geiser geiser-autodoc 
   (let ((ids (get-arg)))
     (define (helper id)
-      (list id '("args" (("required") ("optional" x y "...") ("key"))) '("module" chicken)) )
+      `(,id ("args" (("required") ("optional") ("key"))) ("module" chicken)) )
     (if (list? ids)
         (map helper ids)
         '())))

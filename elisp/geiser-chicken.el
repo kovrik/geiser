@@ -109,22 +109,21 @@ This function uses `geiser-chicken-init-file' if it exists."
     ,@(and init-file (file-readable-p init-file) (list init-file)))))
 
 (defconst geiser-chicken--prompt-regexp "[^>]+> ")
-(defconst geiser-chicken--debugger-prompt-regexp
-  geiser-chicken--prompt-regexp)
+(defconst geiser-chicken--debugger-prompt-regexp geiser-chicken--prompt-regexp)
 
 ;;; Evaluation support:
-(defsubst geiser-chicken--linearize-args (args)
-  (mapconcat 'identity args " "))
 
 (defun geiser-chicken--geiser-procedure (proc &rest args)
   (case proc
-    ((eval compile) (format ",geiser-eval %s %s %s"
+    ((eval compile) (format ",geiser-eval %s %s"
                             (or (car args) "#f")
-                            (geiser-chicken--linearize-args (cdr args))
                             (mapconcat 'identity (cdr args) " ")))
-    ((load-file compile-file) (format ",geiser-load-file %s" (car args)))
+    ((load-file compile-file) (format ",geiser-load-file %s" 
+                                      (car args)))
     ((no-values) ",geiser-no-values")
-    (t (format "geiser-%s (%s)" proc (geiser-chicken--linearize-args args)))))
+    (t (format "geiser-%s (%s)" 
+               proc 
+               (mapconcat 'identity args " ")))))
 
 (defconst geiser-chicken--module-re
   "(module +\\(([^)]+)\\)")
@@ -138,7 +137,9 @@ This function uses `geiser-chicken-init-file' if it exists."
            (geiser-syntax--pop-to-top)
            (if (or (re-search-backward geiser-chicken--module-re nil t)
                    (re-search-forward geiser-chicken--module-re nil t)
+                   (looking-at geiser-chicken--module-re)
                    (re-search-backward geiser-chicken--library-re)
+                   (looking-at geiser-chicken--library-re)
                    (re-search-forward geiser-chicken--library-re))
                (geiser-chicken--get-module (match-string-no-properties 1))
              :f)))
@@ -149,7 +150,7 @@ This function uses `geiser-chicken-init-file' if it exists."
            (error :f)))
         (t :f)))
 
-(defun geiser-chicken--module-cmd (module fmt &optional def)
+(defun geiser-chicken--module-cmd (module fmt &optional default)
   (when module
     (let* ((module (geiser-chicken--get-module module))
            (module (cond ((or (null module) (eq module :f)) def)
@@ -160,15 +161,12 @@ This function uses `geiser-chicken-init-file' if it exists."
   (geiser-chicken--module-cmd module "(use %s)"))
 
 (defun geiser-chicken--enter-command (module)
-  (geiser-chicken--module-cmd module ",m %s" "(chicken-user)"))
+  (geiser-chicken--module-cmd module ",m %s" "chicken"))
 
 (defun geiser-chicken--exit-command () ",q")
 
 (defun geiser-chicken--symbol-begin (module)
-  (if module
-      (max (save-excursion (beginning-of-line) (point))
-           (save-excursion (skip-syntax-backward "^(>") (1- (point))))
-    (save-excursion (skip-syntax-backward "^-()>") (point))))
+  (save-excursion (skip-syntax-backward "^-()>") (point)))
 
 
 ;;; Error display
@@ -199,8 +197,9 @@ This function uses `geiser-chicken-init-file' if it exists."
 ;;; Trying to ascertain whether a buffer is Chicken Scheme:
 
 (defconst geiser-chicken--guess-re
-  (format "\\(%s\\|#! *.+\\(/\\| \\)chicken\\( *\\\\\\)?\\)"
-          geiser-chicken--module-re))
+  (format "\\(%s\\|%s\\|#! *.+\\(/\\| \\)chicken\\( *\\\\\\)?\\)"
+          geiser-chicken--module-re
+          geiser-chicken--library-re))
 
 (defun geiser-chicken--guess ()
   (save-excursion
@@ -273,7 +272,8 @@ This function uses `geiser-chicken-init-file' if it exists."
 (defconst geiser-chicken-minimum-version "4.8.0.0")
 
 (defun geiser-chicken--version (binary)
-  (shell-command-to-string (format "%s  e \"(display (chicken-version))\"" binary)))
+  (shell-command-to-string (format "%s -e \"(display (chicken-version))\"" 
+                                   binary)))
 
 (defun connect-to-chicken ()
   "Start a Chicken REPL connected to a remote process."
@@ -283,7 +283,8 @@ This function uses `geiser-chicken-init-file' if it exists."
 (defun geiser-chicken--startup (remote)
   (compilation-setup t)
   (let ((geiser-log-verbose-p t))
-    (geiser-eval--send/wait (format "(load \"%s\")\n" (expand-file-name "chicken/geiser/emacs.scm" geiser-scheme-dir)))))
+    (geiser-eval--send/wait (format "(load \"%s\")\n" 
+                                    (expand-file-name "chicken/geiser/emacs.scm" geiser-scheme-dir)))))
 
 ;;; Implementation definition:
 
