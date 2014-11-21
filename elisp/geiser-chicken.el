@@ -117,15 +117,14 @@ This function uses `geiser-chicken-init-file' if it exists."
   (mapconcat 'identity args " "))
 
 (defun geiser-chicken--geiser-procedure (proc &rest args)
-  (let ((fmt
-         (case proc
-           ((eval compile) (format ",geiser-eval %s %s"
-                                   (or (car args) "#f")
-                                   (geiser-chicken--linearize-args (cdr args))))
-           ((load-file compile-file) (format ",geiser-load-file %s" (car args)))
-           ((no-values) ",geiser-no-values")
-           (t (format "geiser-%s (%s)" proc (geiser-chicken--linearize-args args))))))
-    fmt))
+  (case proc
+    ((eval compile) (format ",geiser-eval %s %s %s"
+                            (or (car args) "#f")
+                            (geiser-chicken--linearize-args (cdr args))
+                            (mapconcat 'identity (cdr args) " ")))
+    ((load-file compile-file) (format ",geiser-load-file %s" (car args)))
+    ((no-values) ",geiser-no-values")
+    (t (format "geiser-%s (%s)" proc (geiser-chicken--linearize-args args)))))
 
 (defconst geiser-chicken--module-re
   "(module +\\(([^)]+)\\)")
@@ -284,7 +283,7 @@ This function uses `geiser-chicken-init-file' if it exists."
 (defun geiser-chicken--startup (remote)
   (compilation-setup t)
   (let ((geiser-log-verbose-p t))
-    (geiser-eval--send/wait "(load \"geiser/emacs.scm\")\n")))
+    (geiser-eval--send/wait (format "(load \"%s\")\n" (expand-file-name "chicken/geiser/emacs.scm" geiser-scheme-dir)))))
 
 ;;; Implementation definition:
 

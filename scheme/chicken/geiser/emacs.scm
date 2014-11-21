@@ -24,7 +24,7 @@
                (let ((arg (car !!args)))
                  (set! !!args (cdr !!args))
                  arg)))
-          (,(r 'call-with-result) (lambda () ,@body)))
+          (begin ,@body))
          (,(r 'toplevel-command) ',name ,name)))))
 
 (define-toplevel-for-geiser geiser-no-values
@@ -39,9 +39,11 @@
          (args (get-arg))
          (env (if module (module-environment module) #f))
          (proc (if env (eval form env) (eval form))))
-    (if env
-        (eval `(,proc ,@args) env)
-        (eval `(,proc ,@args)))))
+    (call-with-result
+     (lambda ()
+       (if env
+           (eval `(,proc ,@args) env)
+           (eval `(,proc ,@args)))))))
 
 (define-toplevel-for-geiser geiser-load-file 
   (let ((file (get-arg)))
