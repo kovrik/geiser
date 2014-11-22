@@ -99,41 +99,6 @@
     (newline)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Modules
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define-toplevel-for-geiser geiser-module-exports 
-  (let ((module-name (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-symbol-module 
-  (let ((symbol (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-module-name? 
-  (let ((module-name (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-module-path 
-  (let ((module-name (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-find-module 
-  (let ((module-name (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-all-modules
-  #f)
-
-(define-toplevel-for-geiser geiser-submodules 
-  (let ((module (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-module-location 
-  (let ((name (get-arg)))
-    #f))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Symbols
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -146,10 +111,9 @@
 
 (define-toplevel-for-geiser geiser-module-completions
   (let* ((prefix (get-arg))
-         (re (regexp (string-append "^" (regexp-escape prefix)))))
-    (sort! (map ->string
-                (apropos-list re #:macros? #t))
-           string<?)))
+         (match (string-append "^" (regexp-escape prefix))))
+    (filter (lambda (v) (string-search match v))
+            (installed-extensions))))
 
 (define-toplevel-for-geiser geiser-symbol-location 
   (let ((symbol (get-arg)))
@@ -202,6 +166,41 @@
 
 (define-toplevel-for-geiser geiser-find-file 
   (let ((path (get-arg)))
+    #f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Modules
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-toplevel-for-geiser geiser-module-exports 
+  (let ((module-name (get-arg)))
+    #f))
+
+(define-toplevel-for-geiser geiser-symbol-module 
+  (let ((symbol (get-arg)))
+    #f))
+
+(define-toplevel-for-geiser geiser-module-name? 
+  (let ((module-name (get-arg)))
+    #f))
+
+(define-toplevel-for-geiser geiser-module-path 
+  (let ((module-name (get-arg)))
+    #f))
+
+(define-toplevel-for-geiser geiser-find-module 
+  (let ((module-name (get-arg)))
+    #f))
+
+(define-toplevel-for-geiser geiser-all-modules
+  #f)
+
+(define-toplevel-for-geiser geiser-submodules 
+  (let ((module (get-arg)))
+    #f))
+
+(define-toplevel-for-geiser geiser-module-location 
+  (let ((name (get-arg)))
     #f))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
