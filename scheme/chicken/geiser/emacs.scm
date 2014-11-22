@@ -1,7 +1,15 @@
 (use apropos)
 (use regex)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Utilities
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Wraps output from geiser functions
+;; Format is:
+;; '((result "string representation of result") (output "string representation of output") (error "string representation of caught error"))
 (define (call-with-result thunk)
+  ;; TODO: Capture errors and dump them into '(error "I'm a string!")
   (let* ((result #f)
          (output
           (with-output-to-string
@@ -11,12 +19,17 @@
                (lambda () (set! result (thunk))))))))
 
     ; Hacks
+    ; ->string doesn't escape strings, but with-output-to-string will
     (set! result (with-output-to-string (lambda () (write result))))
 
     (write `((result ,result)
              (output ,output)))
     (newline)))
 
+;; This macro aids in the creation of toplevel definitions for the interpreter which are also available to code
+;; toplevel passes parameters via the current-input-port, and so in order to make the definition behave nicely
+;; in both usage contexts I defined a (get-arg) function which iteratively pulls arguments either from the 
+;; input port or from the variable arguments, depending on context.
 (define-syntax define-toplevel-for-geiser
   (lambda (f r c)
     (let* ((name (cadr f))
@@ -33,12 +46,11 @@
           (begin ,@body))
          (,(r 'toplevel-command) ',name ,name)))))
 
-(define-toplevel-for-geiser geiser-no-values
-  (values))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Geiser core functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define-toplevel-for-geiser geiser-newline
-  (newline))
-
+;; Basically all non-core functions pass through geiser-eval
 (define-toplevel-for-geiser geiser-eval
   (let* ((module (get-arg))
          (form (get-arg))
@@ -51,9 +63,21 @@
            (eval `(,proc ,@args) env)
            (eval `(,proc ,@args)))))))
 
-(define-toplevel-for-geiser geiser-load-file 
-  (let ((file (get-arg)))
-    (load file)))
+;; The no-values identity
+(define-toplevel-for-geiser geiser-no-values
+  (values))
+
+;; Invoke a newline
+(define-toplevel-for-geiser geiser-newline
+  (newline))
+
+;; Spawn a server for remote repl access
+(define-toplevel-for-geiser geiser-start-server
+  #f)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Symbols
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-toplevel-for-geiser geiser-completions 
   (let* ((prefix (get-arg))
@@ -69,43 +93,20 @@
                 (apropos-list re #:macros? #t))
            string<?)))
 
-;; TODO: Make this work
-(define-toplevel-for-geiser geiser-autodoc 
-  (let ((ids (get-arg)))
-    (define (helper id)
-      `(,id ("args" (("required") ("optional") ("key"))) ("module" chicken)) )
-    (if (list? ids)
-        (map helper ids)
-        '())))
-
-(define-toplevel-for-geiser geiser-symbol-documentation 
+(define-toplevel-for-geiser geiser-symbol-location 
   (let ((symbol (get-arg)))
     #f))
 
+(define-toplevel-for-geiser geiser-generic-methods 
+  (let ((symbol (get-arg)))
+    #f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Modules
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (define-toplevel-for-geiser geiser-module-exports 
   (let ((module-name (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-object-signature 
-  (let ((name (get-arg))
-        (object (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-compile 
-  (let ((form (get-arg))
-        (module (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-compile-file 
-  (let ((opts (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-set-warnings 
-  (let ((level (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-add-to-load-path 
-  (let ((directory (get-arg)))
     #f))
 
 (define-toplevel-for-geiser geiser-symbol-module 
@@ -135,13 +136,66 @@
   (let ((name (get-arg)))
     #f))
 
-(define-toplevel-for-geiser geiser-symbol-location 
-  (let ((symbol (get-arg)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Autodoc and Signature
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-toplevel-for-geiser geiser-autodoc 
+  (let ((ids (get-arg)))
+    (define (generate-details id)
+      ;; TODO: Make this work
+      `(,id ("args" (("required") ("optional") ("key"))) ("module" chicken)))
+    (define (prefilter id)
+      (null? (filter (lambda (v) (eq? id v)) (apropos-list (->string id) #:macros? #t))))
+    (if (list? ids)
+        (map generate-details (filter prefilter ids))
+        '())))
+
+(define-toplevel-for-geiser geiser-object-signature 
+  (let ((name (get-arg))
+        (object (get-arg)))
     #f))
 
-(define-toplevel-for-geiser geiser-generic-methods 
+(define-toplevel-for-geiser geiser-symbol-documentation 
   (let ((symbol (get-arg)))
+    ))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; File and Buffer Operations
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-toplevel-for-geiser geiser-load-file 
+  (let ((file (get-arg)))
+    (load file)))
+
+(define-toplevel-for-geiser geiser-compile 
+  (let ((form (get-arg))
+        (module (get-arg)))
     #f))
+
+(define-toplevel-for-geiser geiser-compile-file 
+  (let ((opts (get-arg)))
+    #f))
+
+(define-toplevel-for-geiser geiser-find-file 
+  (let ((path (get-arg)))
+    #f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interpreter State
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-toplevel-for-geiser geiser-set-warnings 
+  (let ((level (get-arg)))
+    #f))
+
+(define-toplevel-for-geiser geiser-add-to-load-path 
+  (let ((directory (get-arg)))
+    #f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Debugging
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-toplevel-for-geiser geiser-callers 
   (let ((symbol (get-arg)))
@@ -150,11 +204,4 @@
 (define-toplevel-for-geiser geiser-callees 
   (let ((symbol (get-arg)))
     #f))
-
-(define-toplevel-for-geiser geiser-find-file 
-  (let ((path (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-start-server
-  #f)
 
