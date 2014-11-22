@@ -1,5 +1,7 @@
 (use apropos)
 (use regex)
+(use srfi-18)
+(use tcp)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Utilities
@@ -73,7 +75,20 @@
 
 ;; Spawn a server for remote repl access
 (define-toplevel-for-geiser geiser-start-server
-  #f)
+  (let* ((listener (tcp-listen 0))
+         (port (tcp-listener-port listener)))
+    (define (remote-repl)
+      (receive (in out) (tcp-accept listener)
+        (current-input-port in)
+        (current-output-port out)
+        (current-error-port out)
+          
+        (repl)))
+
+    (thread-start! (make-thread remote-repl))
+
+    (write `(port ,port))
+    (newline)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Symbols
@@ -158,7 +173,7 @@
 
 (define-toplevel-for-geiser geiser-symbol-documentation 
   (let ((symbol (get-arg)))
-    ))
+    #f))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; File and Buffer Operations
