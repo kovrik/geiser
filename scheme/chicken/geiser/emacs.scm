@@ -1,7 +1,9 @@
 (use apropos)
 (use regex)
+(use irregex)
 (use srfi-18)
 (use tcp)
+(use posix)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Utilities
@@ -48,6 +50,12 @@
           (begin ,@body))
          (,(r 'toplevel-command) ',name ,name)))))
 
+;; Locates all installed extensions
+(define (installed-extensions)
+  (let ((output (call-with-input-pipe "chicken-status" read-all)))
+    (sort! (irregex-split "\\n" (irregex-replace/all " [^\\n]*" output))
+           string<?)))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Geiser core functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -91,32 +99,6 @@
     (newline)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Symbols
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define-toplevel-for-geiser geiser-completions 
-  (let* ((prefix (get-arg))
-         (re (regexp (string-append "^" (regexp-escape prefix)))))
-    (sort! (map ->string
-                (apropos-list re #:macros? #t))
-           string<?)))
-
-(define-toplevel-for-geiser geiser-module-completions
-  (let* ((prefix (get-arg))
-         (re (regexp (string-append "^" (regexp-escape prefix)))))
-    (sort! (map ->string
-                (apropos-list re #:macros? #t))
-           string<?)))
-
-(define-toplevel-for-geiser geiser-symbol-location 
-  (let ((symbol (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-generic-methods 
-  (let ((symbol (get-arg)))
-    #f))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Modules
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -149,6 +131,32 @@
 
 (define-toplevel-for-geiser geiser-module-location 
   (let ((name (get-arg)))
+    #f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Symbols
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-toplevel-for-geiser geiser-completions 
+  (let* ((prefix (get-arg))
+         (re (regexp (string-append "^" (regexp-escape prefix)))))
+    (sort! (map ->string
+                (apropos-list re #:macros? #t))
+           string<?)))
+
+(define-toplevel-for-geiser geiser-module-completions
+  (let* ((prefix (get-arg))
+         (re (regexp (string-append "^" (regexp-escape prefix)))))
+    (sort! (map ->string
+                (apropos-list re #:macros? #t))
+           string<?)))
+
+(define-toplevel-for-geiser geiser-symbol-location 
+  (let ((symbol (get-arg)))
+    #f))
+
+(define-toplevel-for-geiser geiser-generic-methods 
+  (let ((symbol (get-arg)))
     #f))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
