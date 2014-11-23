@@ -4,6 +4,7 @@
 (use srfi-18)
 (use tcp)
 (use posix)
+(use chicken-doc)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Utilities
@@ -56,21 +57,22 @@
     (sort! (irregex-split "\\n" (irregex-replace/all " [^\\n]*" output))
            string<?)))
 
-;; Returns the value of a symbol if it is bound, false otherwise
-(define (bound? sym)
-  (let ((value #f))
-    (with-output-to-string 
-      (lambda () 
-        (current-error-port (current-output-port))
-        (condition-case 
-         (set! value (eval sym)) 
-         ((exn) #f))))
-    value))
+;; ;; Returns the value of a symbol if it is bound, false otherwise
+;; (define (bound? sym)
+;;   (if (string? sym)
+;;       (bound? (string->symbol sym))
+;;       (let ((value #f))
+;;         (with-output-to-string 
+;;           (lambda ()
+;;             (condition-case 
+;;              (set! value (eval sym)) 
+;;              ((exn) #f))))
+;;         value)))
 
 ;; Builds a signature list from an identifier
 ;; The format is:
 ;; ((,id (args ((required [signature]) (optional) (key))) (module [module path]) [(error "not found")]) ...)
-(define (find-signatures id #!optional (detail #t))
+(define (find-signatures id)
   (define (fmt node)
     (let ((id (car node))
           (type (cadr node)))
@@ -79,17 +81,20 @@
         `(,id (args ((required)
                      (optional)
                      (key)))
-              (module)))
+              (module)
+              (docstring . ,(format "~s (macro)" id))))
        ((equal? "procedure" type)
         `(,id (args ((required ,@(with-input-from-string (caddr node) (lambda () (read))))
                      (optional)
                      (key)))
-              (module)))
+              (module)
+              (docstring . ,(format "~s (procedure) ~s" id (caddr node)))))
        (else
         `(,id (args ((required)
                      (optional)
                      (key)))
               (module)
+              (docstring . ,(format "~s (unknown)"))
               (error "Unknown type"))))))
 
   (define (find id)
@@ -104,17 +109,12 @@
                             (lambda () (apropos id #:macros? #t)))
                           "\n")))))
 
-  (let* ((res (map fmt (find id)))
-         (val (and detail (bound? id)))
-         (val (if val (->string val) '())))
-    (let* ((res (if (null? res)
-                    `((,id (args ((required) (optional) (key))) 
-                           (module "") 
-                           (error "not found")))
-                    res))
-           (sigs (map (lambda (lst) (append lst `((value . ,val))))
-                      res)))
-      sigs)))
+  (let* ((res (map fmt (find id))))
+    (if (null? res)
+        `((,id (args ((required) (optional) (key))) 
+               (module "") 
+               (error "not found")))
+        res)))
 
 ;; Takes a list of signatures and prepares them for geiser
 (define (export-signatures! sigs)
@@ -175,7 +175,7 @@
     (newline)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Symbols
+;; Completions, Autodoc and Signature
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define-toplevel-for-geiser geiser-completions 
@@ -191,18 +191,6 @@
     (filter (lambda (v) (string-search match v))
             (installed-extensions))))
 
-(define-toplevel-for-geiser geiser-symbol-location 
-  (let ((symbol (get-arg)))
-    #f))
-
-(define-toplevel-for-geiser geiser-generic-methods 
-  (let ((symbol (get-arg)))
-    #f))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Autodoc and Signature
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 (define-toplevel-for-geiser geiser-autodoc 
   (let ((ids (get-arg)))
     (define (generate-details id)
@@ -214,13 +202,42 @@
         '())))
 
 (define-toplevel-for-geiser geiser-object-signature 
-  (let ((name (get-arg))
-        (object (get-arg)))
-    #f))
+  (let* ((name (get-arg))
+         (object (get-arg))
+         (sig (geiser-autodoc `(,name))))
+    (if (null? sig) '() (car sig))))
 
-(define-toplevel-for-geiser geiser-symbol-documentation 
+;; TODO: Divine some way to support this functionality
+(define-toplevel-for-geiser geiser-symbol-location 
   (let ((symbol (get-arg)))
-    #f))
+    '(("file") ("line"))))
+
+(define-toplevel-for-geiser geiser-symbol-documentation
+  (define (make-doc symbol #!optional (filter-for-procedures? #t))
+    (with-output-to-string 
+      (lambda () 
+        (map (lambda (node)
+               (display (string-append "= Document Node: " (node-signature node) " =\n"))
+               (describe node)
+               (display "\n\n")) 
+             (filter 
+              (lambda (n)
+                (or (not filter-for-procedures?)
+                    (string-search "\\(" (node-signature n))))
+              (match-nodes symbol))))))
+
+  (let* ((symbol (get-arg))
+         (sig (find-signatures symbol))
+         (macro? (not (find (lambda (v) (equal? symbol (symbol->string v))) (apropos-list symbol)))))
+    (if (null? sig) 
+        '() 
+        `(("signature" ,@(export-signatures! (car sig))) 
+          ("docstring" . ,(make-doc symbol (not macro?)))))))
+
+;; TODO: Support generic methods
+(define-toplevel-for-geiser geiser-generic-methods 
+  (let ((symbol (get-arg)))
+    '()))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; File and Buffer Operations
