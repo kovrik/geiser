@@ -56,6 +56,82 @@
     (sort! (irregex-split "\\n" (irregex-replace/all " [^\\n]*" output))
            string<?)))
 
+;; Returns the value of a symbol if it is bound, false otherwise
+(define (bound? sym)
+  (let ((value #f))
+    (with-output-to-string 
+      (lambda () 
+        (current-error-port (current-output-port))
+        (condition-case 
+         (set! value (eval sym)) 
+         ((exn) #f))))
+    value))
+
+;; Builds a signature list from an identifier
+;; The format is:
+;; ((,id (args ((required [signature]) (optional) (key))) (module [module path]) [(error "not found")]) ...)
+(define (find-signatures id #!optional (detail #t))
+  (define (fmt node)
+    (let ((id (car node))
+          (type (cadr node)))
+      (cond
+       ((equal? "macro" type)
+        `(,id (args ((required)
+                     (optional)
+                     (key)))
+              (module)))
+       ((equal? "procedure" type)
+        `(,id (args ((required ,@(with-input-from-string (caddr node) (lambda () (read))))
+                     (optional)
+                     (key)))
+              (module)))
+       (else
+        `(,id (args ((required)
+                     (optional)
+                     (key)))
+              (module)
+              (error "Unknown type"))))))
+
+  (define (find id)
+    (let ((id (cond 
+               ((string? id) id) 
+               ((symbol? id) (symbol->string id))
+               (else (error "Expected a symbol or string")))))
+      (filter
+       (lambda (s) (equal? (car s) id))
+       (map (lambda (s) (string-split s " "))
+            (string-split (with-output-to-string
+                            (lambda () (apropos id #:macros? #t)))
+                          "\n")))))
+
+  (let* ((res (map fmt (find id)))
+         (val (and detail (bound? id)))
+         (val (if val (->string val) '())))
+    (let* ((res (if (null? res)
+                    `((,id (args ((required) (optional) (key))) 
+                           (module "") 
+                           (error "not found")))
+                    res))
+           (sigs (map (lambda (lst) (append lst `((value . ,val))))
+                      res)))
+      sigs)))
+
+;; Takes a list of signatures and prepares them for geiser
+(define (export-signatures! sigs)
+  (define (export! sig)
+    (cond
+     ((null? sig) sig)
+     ((list? (car sig))
+      (export! (car sig))
+      (export! (cdr sig)))
+     ((symbol? (car sig))
+      (set! (car sig) (symbol->string (car sig)))
+      (export! (cdr sig)))
+     (else 
+      (export! (cdr sig)))))
+  (export! sigs)
+  sigs)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Geiser core functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -130,12 +206,11 @@
 (define-toplevel-for-geiser geiser-autodoc 
   (let ((ids (get-arg)))
     (define (generate-details id)
-      ;; TODO: Make this work
-      `(,id ("args" (("required") ("optional") ("key"))) ("module" chicken)))
-    (define (prefilter id)
-      (null? (filter (lambda (v) (eq? id v)) (apropos-list (->string id) #:macros? #t))))
+      (export-signatures! (find-signatures id)))
+
     (if (list? ids)
-        (map generate-details (filter prefilter ids))
+        (foldr append '()
+               (map generate-details ids))
         '())))
 
 (define-toplevel-for-geiser geiser-object-signature 
