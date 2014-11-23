@@ -75,16 +75,16 @@
 (define (find-signatures id)
   (define (fmt node)
     (let ((id (car node))
-          (type (cadr node)))
+          (type (cdr node)))
       (cond
-       ((equal? "macro" type)
+       ((equal? 'macro type)
         `(,id (args ((required)
                      (optional)
                      (key)))
               (module)
               (docstring . ,(format "~s (macro)" id))))
-       ((equal? "procedure" type)
-        `(,id (args ((required ,@(with-input-from-string (caddr node) (lambda () (read))))
+       ((and (list? type) (equal? 'procedure (car type)))
+        `(,id (args ((required ,@(cdr type))
                      (optional)
                      (key)))
               (module)
@@ -99,15 +99,12 @@
 
   (define (find id)
     (let ((id (cond 
-               ((string? id) id) 
-               ((symbol? id) (symbol->string id))
+               ((string? id) (string->symbol id)) 
+               ((symbol? id) id)
                (else (error "Expected a symbol or string")))))
       (filter
        (lambda (s) (equal? (car s) id))
-       (map (lambda (s) (string-split s " "))
-            (string-split (with-output-to-string
-                            (lambda () (apropos id #:macros? #t)))
-                          "\n")))))
+       (apropos-information-list id #:macros? #t))))
 
   (let* ((res (map fmt (find id))))
     (if (null? res)
@@ -241,24 +238,29 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; File and Buffer Operations
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
 (define-toplevel-for-geiser geiser-load-file 
   (let ((file (get-arg)))
     (load file)))
 
+;; TODO: Support compiling regions
 (define-toplevel-for-geiser geiser-compile 
   (let ((form (get-arg))
         (module (get-arg)))
-    #f))
+    (error "Chicken does not support compiling regions")))
 
 (define-toplevel-for-geiser geiser-compile-file 
-  (let ((opts (get-arg)))
-    #f))
+  (let ((path (get-arg)))
+    (compile-file path)))
 
+;; TODO: Search through available load paths
+;; How to discover those?
 (define-toplevel-for-geiser geiser-find-file 
   (let ((path (get-arg)))
-    #f))
+    (if (file-exists? path)
+        path
+        #f)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Modules
