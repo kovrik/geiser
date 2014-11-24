@@ -5,9 +5,98 @@
 (use tcp)
 (use posix)
 (use chicken-doc)
+(use srfi-1)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Utilities
+;; Symbol lists
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define r5rs-symbols
+  '(abs acos and angle append apply asin assoc assq assv atan begin 
+    boolean? caar cadr call-with-current-continuation 
+    call-with-input-file call-with-output-file call-with-values 
+    car case cdddar cddddr cdr ceiling char->integer char-alphabetic?
+    char-ci<=? char-ci<? char-ci=? char-ci>=? char-ci>? char-downcase
+    char-lower-case? char-numeric? char-ready? char-upcase
+    char-upper-case? char-whitespace? char<=? char<? char=? char>=?
+    char>? char? close-input-port close-output-port complex? cond cons
+    cos current-input-port current-output-port define define-syntax
+    delay denominator display do dynamic-wind else eof-object? eq?
+    equal? eqv? eval even? exact->inexact exact? exp expt floor
+    for-each force gcd if imag-part inexact->exact inexact? input-port?
+    integer->char integer? interaction-environment lambda lcm length
+    let let* let-syntax letrec letrec-syntax list list->string 
+    list->vector list-ref list-tail list? load log magnitude make-polar
+    make-rectangular make-string make-vector map max member memq memv 
+    min modulo negative? newline not null-environment null? 
+    number->string number? numerator odd? open-input-file 
+    open-output-file or output-port? pair? peek-char port? positive? 
+    procedure? quasiquote quote quotient rational? rationalize read 
+    read-char real-part real? remainder reverse round 
+    scheme-report-environment set! set-car! set-cdr! setcar sin sqrt 
+    string string->list string->number string->symbol string-append 
+    string-ci<=? string-ci<? string-ci=? string-ci>=? string-ci>? 
+    string-copy string-fill! string-length string-ref string-set! 
+    string<=? string<? string=? string>=? string>? string? substring 
+    symbol->string symbol? syntax-rules tan transcript-off transcript-on 
+    truncate values vector vector->list vector-fill! vector-length 
+    vector-ref vector-set! vector? with-input-from-file with-output-to-file 
+    write write-char zero?))
+
+(define r7rs-small-symbols 
+  '(* + - ... / < <= = => > >= abs and append apply assoc assq
+    assv begin binary-port? boolean=? boolean? bytevector
+    bytevector-append bytevector-copy bytevector-copy! bytevector-length
+    bytevector-u8-ref bytevector-u8-set! bytevector? caar cadr
+    call-with-current-continuation call-with-port call-with-values call/cc
+    car case cdar cddr cdr ceiling char->integer char-ready? char<=?
+    char<? char=? char>=? char>? char? close-input-port
+    close-output-port close-port complex? cond cond-expand cons
+    current-error-port current-input-port current-output-port
+    define define-record-type define-syntax define-values denominator do
+    dynamic-wind else eof-object? equal? error error-object-message
+    even? exact-integer-sqrt exact? features floor floor-remainder
+    flush-output-port gcd get-output-string if include-ci inexact?
+    input-port? integer? lcm let let*-values let-values letrec* list
+    list->vector list-ref list-tail make-bytevector make-parameter
+    make-vector max memq min negative? not number->string numerator
+    open-input-bytevector open-output-bytevector or output-port?
+    parameterize peek-u8 positive? quasiquote quotient raise-continuable
+    rationalize read-bytevector! read-error? read-string real? reverse
+    set! set-cdr! string string->number string->utf8 string-append
+    eof-object eq? eqv? error-object-irritants error-object? exact
+    exact-integer? expt file-error? floor-quotient floor/ for-each
+    get-output-bytevector guard include inexact input-port-open?
+    integer->char lambda length let* let-syntax letrec letrec-syntax
+    list->string list-copy list-set! list? make-list make-string map
+    member memv modulo newline null? number? odd? open-input-string
+    open-output-string output-port-open? pair? peek-char port?
+    procedure? quote raise rational? read-bytevector read-char read-line
+    read-u8 remainder round set-car! square string->list string->symbol
+    string->vector string-copy string-copy! string-for-each string-map
+    string-set! string<? string>=? string? symbol->string symbol?
+    syntax-rules truncate truncate-remainder u8-ready? unquote
+    utf8->string vector vector->string vector-copy vector-fill!
+    vector-length vector-ref vector? with-exception-handler write-char
+    write-u8 string-fill! string-length string-ref string<=?
+    string=? string>? substring symbol=? syntax-error textual-port?
+    truncate-quotient truncate/ unless unquote-splicing values
+    vector->list vector-append vector-copy! vector-for-each vector-map
+    vector-set! when write-bytevector write-string zero?))
+
+(define chicken-builtin-symbols 
+  '(and-let* assume compiler-typecase cond-expand condition-case cut cute declare define-constant
+    define-inline define-interface define-record define-record-type define-specialization
+    define-syntax-rule define-type define-values dotimes ecase fluid-let foreign-lambda
+    foreign-lambda* foreign-primitive foreign-safe-lambda foreign-safe-lambda* functor
+    handle-exceptions import let*-values let-location let-optionals let-optionals*
+    let-values letrec* letrec-values match-letrec module parameterize regex-case
+    require-extension select set! unless use when with-input-from-pipe match
+    match-lambda match-lambda* match-let match-let* receive))
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; Utilities
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Wraps output from geiser functions
@@ -23,8 +112,8 @@
                (current-output-port)
                (lambda () (set! result (thunk))))))))
 
-    ; Hacks
-    ; ->string doesn't escape strings, but with-output-to-string will
+                                        ; Hacks
+                                        ; ->string doesn't escape strings, but with-output-to-string will
     (set! result (with-output-to-string (lambda () (write result))))
 
     (write `((result ,result)
@@ -57,6 +146,29 @@
     (sort! (irregex-split "\\n" (irregex-replace/all " [^\\n]*" output))
            string<?)))
 
+;; Locates any paths at which a particular symbol might be located
+(define (find-library-paths id types)
+  (let ((id (cond
+             ((string? id) (string->symbol))
+             ((symbol? id) id)
+             (else (error "Expected either a symbol or string.")))))
+    (append
+     (map node-path 
+          (filter 
+           (lambda (n) 
+             (let ((type (node-type n)))
+               (any (lambda (t) (eq? type t)) types)))
+           (match-nodes id)))
+     (if (any (lambda (sym) (eq? sym id)) r5rs-symbols)
+         '((r5rs))
+         '())
+     (if (any (lambda (sym) (eq? sym id)) r7rs-small-symbols)
+         '((r7rs))
+         '())
+     (if (any (lambda (sym) (eq? sym id)) chicken-builtin-symbols)
+         '((chicken))
+         '()))))
+
 ;; ;; Returns the value of a symbol if it is bound, false otherwise
 ;; (define (bound? sym)
 ;;   (if (string? sym)
@@ -81,21 +193,17 @@
         `(,id (args ((required)
                      (optional)
                      (key)))
-              (module)
-              (docstring . ,(format "~s (macro)" id))))
+              (module ,@(find-library-paths id '(procedure syntax)))))
        ((and (list? type) (equal? 'procedure (car type)))
         `(,id (args ((required ,@(cdr type))
                      (optional)
                      (key)))
-              (module)
-              (docstring . ,(format "~s (procedure) ~s" id (caddr node)))))
+              (module ,@(find-library-paths '(procedure)))))
        (else
         `(,id (args ((required)
                      (optional)
                      (key)))
-              (module)
-              (docstring . ,(format "~s (unknown)"))
-              (error "Unknown type"))))))
+              (module))))))
 
   (define (find id)
     (let ((id (cond 
@@ -128,6 +236,20 @@
       (export! (cdr sig)))))
   (export! sigs)
   sigs)
+
+;; Builds the documentation from Chicken Doc for a specific ymbol
+(define (make-doc symbol #!optional (filter-for-type #f))
+  (with-output-to-string 
+    (lambda () 
+      (map (lambda (node)
+             (display (string-append "= Node: " (node-signature node) " =\n"))
+             (describe node)
+             (display "\n\n")) 
+           (filter 
+            (lambda (n)
+              (or (not filter-for-type)
+                  (eq? (node-type n) filter-for-type)))
+            (match-nodes symbol))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Geiser core functions
@@ -210,22 +332,10 @@
     '(("file") ("line"))))
 
 (define-toplevel-for-geiser geiser-symbol-documentation
-  (define (make-doc symbol #!optional (filter-for-procedures? #t))
-    (with-output-to-string 
-      (lambda () 
-        (map (lambda (node)
-               (display (string-append "= Document Node: " (node-signature node) " =\n"))
-               (describe node)
-               (display "\n\n")) 
-             (filter 
-              (lambda (n)
-                (or (not filter-for-procedures?)
-                    (string-search "\\(" (node-signature n))))
-              (match-nodes symbol))))))
-
   (let* ((symbol (get-arg))
          (sig (find-signatures symbol))
-         (macro? (not (find (lambda (v) (equal? symbol (symbol->string v))) (apropos-list symbol)))))
+         (macro? (not (find (lambda (v) (equal? symbol (symbol->string v))) 
+                            (apropos-list symbol)))))
     (if (null? sig) 
         '() 
         `(("signature" ,@(export-signatures! (car sig))) 
@@ -320,4 +430,3 @@
 (define-toplevel-for-geiser geiser-callees 
   (let ((symbol (get-arg)))
     #f))
-
