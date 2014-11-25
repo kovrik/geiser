@@ -153,12 +153,6 @@
              ((symbol? id) id)
              (else (error "Expected either a symbol or string.")))))
     (append
-     (map node-path 
-          (filter 
-           (lambda (n) 
-             (let ((type (node-type n)))
-               (any (lambda (t) (eq? type t)) types)))
-           (match-nodes id)))
      (if (any (lambda (sym) (eq? sym id)) r5rs-symbols)
          '((r5rs))
          '())
@@ -167,19 +161,13 @@
          '())
      (if (any (lambda (sym) (eq? sym id)) chicken-builtin-symbols)
          '((chicken))
-         '()))))
-
-;; ;; Returns the value of a symbol if it is bound, false otherwise
-;; (define (bound? sym)
-;;   (if (string? sym)
-;;       (bound? (string->symbol sym))
-;;       (let ((value #f))
-;;         (with-output-to-string 
-;;           (lambda ()
-;;             (condition-case 
-;;              (set! value (eval sym)) 
-;;              ((exn) #f))))
-;;         value)))
+         '())
+     (map node-path 
+          (filter 
+           (lambda (n) 
+             (let ((type (node-type n)))
+               (any (lambda (t) (eq? type t)) types)))
+           (match-nodes id))))))
 
 ;; Builds a signature list from an identifier
 ;; The format is:
@@ -415,6 +403,7 @@
   (let ((level (get-arg)))
     #f))
 
+;; TODO: Find a way to add paths to the load path at runtime in chicken
 (define-toplevel-for-geiser geiser-add-to-load-path 
   (let ((directory (get-arg)))
     #f))
