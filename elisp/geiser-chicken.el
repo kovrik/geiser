@@ -26,6 +26,20 @@
 
 (eval-when-compile (require 'cl))
 
+
+(defconst geiser-chicken-builtin-keywords
+  '("and-let*" "assume" "compiler-typecase" "cond-expand" "condition-case"
+    "cut" "cute" "declare" "define-constant" "define-inline" "define-interface"
+    "define-record" "define-record-type" "define-specialization"
+    "define-syntax-rule" "define-type" "define-values" "dotimes" "ecase" 
+    "fluid-let" "foreign-lambda" "foreign-lambda*" "foreign-primitive" 
+    "foreign-safe-lambda" "foreign-safe-lambda*" "functor" "handle-exceptions"
+    "import" "let*-values" "let-location" "let-optionals" "let-optionals*" 
+    "let-values" "letrec*" "letrec-values" "match-letrec" "module" 
+    "parameterize" "regex-case" "require-extension" "select" "set!"
+    "unless" "use" "when" "with-input-from-pipe" "match" "match-lambda"
+    "match-lambda*" "match-let" "match-let*" "receive"))
+
 ;;; Customization:
 
 (defgroup geiser-chicken nil
@@ -128,19 +142,13 @@ This function uses `geiser-chicken-init-file' if it exists."
 (defconst geiser-chicken--module-re
   "(module +\\(([^)]+)\\)")
 
-(defconst geiser-chicken--library-re
-  "(define-library +\\(([^)]+)\\)")
-
 (defun geiser-chicken--get-module (&optional module)
   (cond ((null module)
          (save-excursion
            (geiser-syntax--pop-to-top)
            (if (or (re-search-backward geiser-chicken--module-re nil t)
-                   (re-search-forward geiser-chicken--module-re nil t)
                    (looking-at geiser-chicken--module-re)
-                   (re-search-backward geiser-chicken--library-re)
-                   (looking-at geiser-chicken--library-re)
-                   (re-search-forward geiser-chicken--library-re))
+                   (re-search-forward geiser-chicken--module-re nil t))
                (geiser-chicken--get-module (match-string-no-properties 1))
              :f)))
         ((listp module) module)
@@ -197,9 +205,7 @@ This function uses `geiser-chicken-init-file' if it exists."
 ;;; Trying to ascertain whether a buffer is Chicken Scheme:
 
 (defconst geiser-chicken--guess-re
-  (format "\\(%s\\|%s\\|#! *.+\\(/\\| \\)chicken\\( *\\\\\\)?\\)"
-          geiser-chicken--module-re
-          geiser-chicken--library-re))
+  (regexp-opt geiser-chicken-builtin-keywords))
 
 (defun geiser-chicken--guess ()
   (save-excursion
@@ -211,19 +217,6 @@ This function uses `geiser-chicken-init-file' if it exists."
   (browse-url "http://api.call-cc.org/cdoc?q=%s&query-name=Look+up" id))
 
 ;;; Keywords and syntax
-
-(defconst geiser-chicken-builtin-keywords
-  '("and-let*" "assume" "compiler-typecase" "cond-expand" "condition-case"
-    "cut" "cute" "declare" "define-constant" "define-inline" "define-interface"
-    "define-record" "define-record-type" "define-specialization"
-    "define-syntax-rule" "define-type" "define-values" "dotimes" "ecase" 
-    "fluid-let" "foreign-lambda" "foreign-lambda*" "foreign-primitive" 
-    "foreign-safe-lambda" "foreign-safe-lambda*" "functor" "handle-exceptions"
-    "import" "let*-values" "let-location" "let-optionals" "let-optionals*" 
-    "let-values" "letrec*" "letrec-values" "match-letrec" "module" 
-    "parameterize" "regex-case" "require-extension" "select" "set!"
-    "unless" "use" "when" "with-input-from-pipe" "match" "match-lambda"
-    "match-lambda*" "match-let" "match-let*" "receive"))
 
 (defun geiser-chicken--keywords ()
   `((,(format "[[(]%s\\>" (regexp-opt geiser-chicken-builtin-keywords 1)) . 1)))
