@@ -135,7 +135,7 @@ This function uses `geiser-chicken-init-file' if it exists."
     ((load-file compile-file) (format ",geiser-load-file %s" 
                                       (car args)))
     ((no-values) ",geiser-no-values")
-    (t (format "geiser-%s (%s)" 
+    (t (format "(geiser-%s %s)" 
                proc 
                (mapconcat 'identity args " ")))))
 

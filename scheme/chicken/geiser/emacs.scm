@@ -254,14 +254,15 @@
 (define-toplevel-for-geiser geiser-eval
   (let* ((module (get-arg))
          (form (get-arg))
-         (args (get-arg))
+         ;; (args (get-arg))
          (env (if module (module-environment module) #f))
-         (proc (if env (eval form env) (eval form))))
+         ;; (proc (if env (eval form env) (eval form)))
+         )
     (geiser-call-with-result
      (lambda ()
        (if env
-           (eval `(,proc ,@args) env)
-           (eval `(,proc ,@args)))))))
+           (eval form env)
+           (eval form))))))
 
 ;; The no-values identity
 (define-toplevel-for-geiser geiser-no-values
