@@ -206,12 +206,27 @@ This function uses `geiser-chicken-init-file' if it exists."
     (goto-char (point-min))
     (re-search-forward geiser-chicken--guess-re nil t)))
 
+(defun geiser-chicken--external-help (id module)
+  "Loads chicken doc into a buffer"
+  (browse-url "http://api.call-cc.org/cdoc?q=%s&query-name=Look+up" id))
+
 ;;; Keywords and syntax
 
+(defconst geiser-chicken-builtin-keywords
+  '("and-let*" "assume" "compiler-typecase" "cond-expand" "condition-case"
+    "cut" "cute" "declare" "define-constant" "define-inline" "define-interface"
+    "define-record" "define-record-type" "define-specialization"
+    "define-syntax-rule" "define-type" "define-values" "dotimes" "ecase" 
+    "fluid-let" "foreign-lambda" "foreign-lambda*" "foreign-primitive" 
+    "foreign-safe-lambda" "foreign-safe-lambda*" "functor" "handle-exceptions"
+    "import" "let*-values" "let-location" "let-optionals" "let-optionals*" 
+    "let-values" "letrec*" "letrec-values" "match-letrec" "module" 
+    "parameterize" "regex-case" "require-extension" "select" "set!"
+    "unless" "use" "when" "with-input-from-pipe" "match" "match-lambda"
+    "match-lambda*" "match-let" "match-let*" "receive"))
+
 (defun geiser-chicken--keywords ()
-  (when geiser-chicken-extra-keywords
-    `((,(format "[[(]%s\\>" (regexp-opt geiser-chicken-extra-keywords 1))
-       . 1))))
+  `((,(format "[[(]%s\\>" (regexp-opt geiser-chicken-builtin-keywords 1)) . 1)))
 
 (geiser-syntax--scheme-indent
  (receive 2)
@@ -304,7 +319,7 @@ This function uses `geiser-chicken-init-file' if it exists."
   (import-command geiser-chicken--import-command)
   (find-symbol-begin geiser-chicken--symbol-begin)
   (display-error geiser-chicken--display-error)
-  (external-help nil)
+  (external-help geiser-chicken--external-help)
   (check-buffer geiser-chicken--guess)
   (keywords geiser-chicken--keywords)
   (case-sensitive geiser-chicken-case-sensitive-p))
