@@ -214,7 +214,7 @@ This function uses `geiser-chicken-init-file' if it exists."
 
 (defun geiser-chicken--external-help (id module)
   "Loads chicken doc into a buffer"
-  (browse-url "http://api.call-cc.org/cdoc?q=%s&query-name=Look+up" id))
+  (browse-url (format "http://api.call-cc.org/cdoc?q=%s&query-name=Look+up" id)))
 
 ;;; Keywords and syntax
 
