@@ -140,7 +140,7 @@ This function uses `geiser-chicken-init-file' if it exists."
                (mapconcat 'identity args " ")))))
 
 (defconst geiser-chicken--module-re
-  "(module +\\(([^)]+)\\)")
+  "(module +\\(([^) ]+)\\)|(define-library +\\(([^) ]+)\\)")
 
 (defun geiser-chicken--get-module (&optional module)
   (cond ((null module)
@@ -176,10 +176,10 @@ This function uses `geiser-chicken-init-file' if it exists."
 (defun geiser-chicken--symbol-begin (module)
   (save-excursion (skip-syntax-backward "^-()>") (point)))
 
-
 ;;; Error display
 
 (defun geiser-chicken--enter-debugger ()
+  (message "Attempted to enter the debugger.")
   ;; (let ((bt-cmd (format ",geiser-newline\n,error-message\n,%s\n"
   ;;                       (if geiser-chicken-debug-show-bt-p "bt" "fr"))))
   ;;   (compilation-forget-errors)
@@ -200,7 +200,6 @@ This function uses `geiser-chicken-init-file' if it exists."
     (save-excursion (insert msg))
     (geiser-edit--buttonize-files))
   (and (not key) msg (not (zerop (length msg)))))
-
 
 ;;; Trying to ascertain whether a buffer is Chicken Scheme:
 
