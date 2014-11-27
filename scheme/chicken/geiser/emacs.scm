@@ -458,3 +458,13 @@
 (define-toplevel-for-geiser geiser-module-location 
   (let ((name (get-arg)))
     #f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Misc
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define-toplevel-for-geiser geiser-macroexpand
+  (let ((form (get-arg)))
+    (with-output-to-string
+      (lambda ()
+        (pretty-print (expand form))))))
