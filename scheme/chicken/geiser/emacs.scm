@@ -149,6 +149,18 @@
 
 ;; Locates any paths at which a particular symbol might be located
 (define (geiser-find-library-paths id types)
+  ;; Removes the given id from the node path
+  (define (remove-self-id id path)
+    (cond
+     ((not (list? path)) path)
+     ((null? path) path)
+     ((null? (cdr path))
+      (if (eq? (car path) id)
+          '()
+          path))
+     (else
+      (cons (car path) (remove-self-id id (cdr path))))))
+
   (let ((id (cond
              ((string? id) (string->symbol))
              ((symbol? id) id)
@@ -163,12 +175,14 @@
      (if (any (lambda (sym) (eq? sym id)) (geiser-chicken-builtin-symbols))
          '((chicken))
          '())
-     (map node-path 
-          (filter 
-           (lambda (n) 
-             (let ((type (node-type n)))
-               (any (lambda (t) (eq? type t)) types)))
-           (match-nodes id))))))
+     (map
+      (lambda (node)
+        (remove-self-id id (node-path node))) 
+      (filter 
+       (lambda (n) 
+         (let ((type (node-type n)))
+           (any (lambda (t) (eq? type t)) types)))
+       (match-nodes id))))))
 
 ;; Builds a signature list from an identifier
 ;; The format is:
