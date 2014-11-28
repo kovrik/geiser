@@ -105,28 +105,32 @@
 ;; Format is:
 ;; '((result "string representation of result") (output "string representation of output") (error "string representation of caught error"))
 (define (geiser-call-with-result thunk)
-  (define (with-all-output-to-string thunk)
-    (with-output-to-string
-      (lambda ()
-        (with-error-output-to-port 
-         (current-output-port)
-         (thunk)))))
   (let* ((result #f)
          (error #f)
-         (output
-          (with-all-output-to-string
-           (lambda ()
-             (with-exception-handler
-              (lambda (exn) (set! error exn))
-              (lambda () (set! result (thunk))))))))
+         (output #f))
+
+    (set! output
+          (handle-exceptions 
+           exn 
+           (set! error exn)
+           (with-output-to-string
+             (lambda ()
+               (with-error-output-to-port 
+                (current-output-port)
+                (thunk))))))
 
     ;; ->string doesn't escape strings, but with-output-to-string will
-    (set! result (with-all-output-to-string (lambda () (write result))))
-    (set! error (with-all-output-to-string (lambda () (write error))))
+    (if error
+      (begin
+        (set! result #f)
+        (set! error (with-output-to-string (lambda () (write (condition->list error))))))
+      (begin
+        (set! error #f)
+        (set! result (with-output-to-string (lambda () (write result))))))
     
     (write `((result ,result)
              (output ,output)
-             (error ,error)))
+             (error , error)))
     (newline)))
 
 ;; This macro aids in the creation of toplevel definitions for the interpreter which are also available to code
