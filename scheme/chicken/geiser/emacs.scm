@@ -103,7 +103,7 @@
 
 ;; Wraps output from geiser functions
 ;; Format is:
-;; '((result "string representation of result") (output "string representation of output") (error "string representation of caught error"))
+;; '((result "string representation of result") (output "string representation of output"))
 (define (geiser-call-with-result thunk)
   (let* ((result #f)
          (error #f)
@@ -121,16 +121,11 @@
 
     ;; ->string doesn't escape strings, but with-output-to-string will
     (if error
-      (begin
-        (set! result #f)
-        (set! error (with-output-to-string (lambda () (write (condition->list error))))))
-      (begin
-        (set! error #f)
-        (set! result (with-output-to-string (lambda () (write result))))))
+      (set! result (with-output-to-string (lambda () (write (condition->list error)))))
+      (set! result (with-output-to-string (lambda () (write result)))))
     
     (write `((result ,result)
-             (output ,output)
-             (error , error)))
+             (output ,output)))
     (newline)))
 
 ;; This macro aids in the creation of toplevel definitions for the interpreter which are also available to code
