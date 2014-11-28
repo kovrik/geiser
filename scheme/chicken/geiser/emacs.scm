@@ -105,20 +105,28 @@
 ;; Format is:
 ;; '((result "string representation of result") (output "string representation of output") (error "string representation of caught error"))
 (define (geiser-call-with-result thunk)
-  ;; TODO: Capture errors and dump them into '(error "I'm a string!")
+  (define (with-all-output-to-string thunk)
+    (with-output-to-string
+      (lambda ()
+        (with-error-output-to-port 
+         (current-output-port)
+         (thunk)))))
   (let* ((result #f)
+         (error #f)
          (output
-          (with-output-to-string
-            (lambda ()
-              (with-error-output-to-port 
-               (current-output-port)
-               (lambda () (set! result (thunk))))))))
+          (with-all-output-to-string
+           (lambda ()
+             (with-exception-handler
+              (lambda (exn) (set! error exn))
+              (lambda () (set! result (thunk))))))))
 
     ;; ->string doesn't escape strings, but with-output-to-string will
-    (set! result (with-output-to-string (lambda () (write result))))
-
+    (set! result (with-all-output-to-string (lambda () (write result))))
+    (set! error (with-all-output-to-string (lambda () (write error))))
+    
     (write `((result ,result)
-             (output ,output)))
+             (output ,output)
+             (error ,error)))
     (newline)))
 
 ;; This macro aids in the creation of toplevel definitions for the interpreter which are also available to code
@@ -268,10 +276,7 @@
 (define-toplevel-for-geiser geiser-eval
   (let* ((module (get-arg))
          (form (get-arg))
-         ;; (args (get-arg))
-         (env (if module (module-environment module) #f))
-         ;; (proc (if env (eval form env) (eval form)))
-         )
+         (env (if module (module-environment module) #f)))
     (geiser-call-with-result
      (lambda ()
        (if env
