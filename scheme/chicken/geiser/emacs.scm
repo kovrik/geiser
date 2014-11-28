@@ -117,7 +117,7 @@
              (lambda ()
                (with-error-output-to-port 
                 (current-output-port)
-                (thunk))))))
+                (lambda () (set! result (thunk))))))))
 
     ;; ->string doesn't escape strings, but with-output-to-string will
     (if error
