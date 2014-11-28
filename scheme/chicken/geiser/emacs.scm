@@ -102,37 +102,44 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Wraps output from geiser functions
-;; Format is:
-;; '((result "string representation of result") (output "string representation of output"))
 (define (geiser-call-with-result thunk)
+  ;; This really should be a chicken library function
   (define (write-exception exn)
-    (display (format "Error: ~s" ((condition-property-accessor 'exn 'message) exn))) (newline)
-    (newline)
-    (display "At: ") (write ((condition-property-accessor 'exn 'location) exn)) (newline)
-    (display "Arguments: ") (write ((condition-property-accessor 'exn 'arguments) exn)) (newline)
+    (define (write-call-entry call)
+      (let ((type (vector-ref call 0))
+            (line (vector-ref call 1)))
+        (cond
+         ((equal? type "<syntax>")
+          (display (format "~a ~a" type line)) (newline))
+         ((equal? type "<eval>")
+          (display (format "~a   ~a" type line)) (newline)))))
+
+    (display (format "Error: (~s) ~s: ~s"
+                     ((condition-property-accessor 'exn 'location) exn)
+                     ((condition-property-accessor 'exn 'message) exn)
+                     ((condition-property-accessor 'exn 'arguments) exn)))
     (newline)
     (display "Call history: ") (newline)
+    (map write-call-entry ((condition-property-accessor 'exn 'call-chain) exn))
     (newline))
 
+  ;; And this should be a chicken library function as well
   (define (with-all-output-to-string thunk)
     (with-output-to-string
       (lambda ()
         (with-error-output-to-port 
          (current-output-port)
-         (handle-exceptions 
-          exn 
-          (write-exception exn)
-          thunk)))))
+         thunk))))
 
-  (let* ((result #f)
-         (output (with-all-output-to-string 
-                  (lambda () (set! result (thunk))))))
+  (let* ((result (if #f #f))
+         (output (handle-exceptions exn 
+                   (with-all-output-to-string (lambda () (write-exception exn)))
+                   (with-all-output-to-string (lambda () (set! result (thunk)))))))
 
-    ;; ->string doesn't escape strings, but with-output-to-string will
     (set! result (with-output-to-string (lambda () (write result))))
-    
+
     (write `((result ,result)
-             (output ,output)))
+             (output . ,output)))
     (newline)))
 
 ;; This macro aids in the creation of toplevel definitions for the interpreter which are also available to code
@@ -221,7 +228,7 @@
         `(,id (args ((required ,@(cdr type))
                      (optional)
                      (key)))
-              (module ,@(geiser-find-library-paths '(procedure)))))
+              (module ,@(geiser-find-library-paths id '(procedure)))))
        (else
         `(,id (args ((required)
                      (optional)
