@@ -105,24 +105,31 @@
 ;; Format is:
 ;; '((result "string representation of result") (output "string representation of output"))
 (define (geiser-call-with-result thunk)
-  (let* ((result #f)
-         (error #f)
-         (output #f))
+  (define (write-exception exn)
+    (display (format "Error: ~s" ((condition-property-accessor 'exn 'message) exn))) (newline)
+    (newline)
+    (display "At: ") (write ((condition-property-accessor 'exn 'location) exn)) (newline)
+    (display "Arguments: ") (write ((condition-property-accessor 'exn 'arguments) exn)) (newline)
+    (newline)
+    (display "Call history: ") (newline)
+    (newline))
 
-    (set! output
-          (handle-exceptions 
-           exn 
-           (set! error exn)
-           (with-output-to-string
-             (lambda ()
-               (with-error-output-to-port 
-                (current-output-port)
-                (lambda () (set! result (thunk))))))))
+  (define (with-all-output-to-string thunk)
+    (with-output-to-string
+      (lambda ()
+        (with-error-output-to-port 
+         (current-output-port)
+         (handle-exceptions 
+          exn 
+          (write-exception exn)
+          thunk)))))
+
+  (let* ((result #f)
+         (output (with-all-output-to-string 
+                  (lambda () (set! result (thunk))))))
 
     ;; ->string doesn't escape strings, but with-output-to-string will
-    (if error
-      (set! result (with-output-to-string (lambda () (write (condition->list error)))))
-      (set! result (with-output-to-string (lambda () (write result)))))
+    (set! result (with-output-to-string (lambda () (write result))))
     
     (write `((result ,result)
              (output ,output)))
