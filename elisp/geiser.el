@@ -81,15 +81,15 @@
   "Connect to a remote Geiser Racket REPL." t)
 
 ;;;###autoload
-(autoload 'run-chibi "geiser-chibi" "Start a Geiser Chibi REPL." t)
+(autoload 'run-chicken "geiser-chicken" "Start a Geiser Chicken REPL." t)
 
 ;;;###autoload
-(autoload 'switch-to-chibi "geiser-chibi"
-  "Start a Geiser Chibi REPL, or switch to a running one." t)
+(autoload 'switch-to-chicken "geiser-chicken"
+  "Start a Geiser Chicken REPL, or switch to a running one." t)
 
 ;;;###autoload
-(autoload 'connect-to-chibi "geiser-chibi"
-  "Connect to a remote Geiser Chibi REPL." t)
+(autoload 'connect-to-chicken "geiser-chicken"
+  "Connect to a remote Geiser Chicken REPL." t)
 
 ;;;###autoload
 (autoload 'geiser-mode "geiser-mode"
