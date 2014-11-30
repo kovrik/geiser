@@ -120,7 +120,7 @@
         geiser-guile
         geiser-image
         geiser-racket
-        geiser-chibi
+        geiser-chicken
         geiser-implementation
         geiser-xref))
 
