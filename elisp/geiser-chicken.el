@@ -75,23 +75,6 @@ this variable to t."
   :type 'boolean
   :group 'geiser-chicken)
 
-(geiser-custom--defcustom geiser-chicken-debug-show-bt-p nil
-  "Whether to autmatically show a full backtrace when entering the debugger.
-If `nil', only the last frame is shown."
-  :type 'boolean
-  :group 'geiser-chicken)
-
-(geiser-custom--defcustom geiser-chicken-jump-on-debug-p nil
-  "Whether to autmatically jump to error when entering the debugger.
-If `t', Geiser will use `next-error' to jump to the error's location."
-  :type 'boolean
-  :group 'geiser-chicken)
-
-(geiser-custom--defcustom geiser-chicken-show-debug-help-p t
-  "Whether to show brief help in the echo area when entering the debugger."
-  :type 'boolean
-  :group 'geiser-chicken)
-
 (geiser-custom--defcustom geiser-chicken-extra-keywords nil
   "Extra keywords highlighted in Chicken scheme buffers."
   :type '(repeat string)
@@ -123,7 +106,6 @@ This function uses `geiser-chicken-init-file' if it exists."
     ,@(and init-file (file-readable-p init-file) (list init-file)))))
 
 (defconst geiser-chicken--prompt-regexp "#[^;]*;[^:0-9]*:?[0-9]+> ")
-(defconst geiser-chicken--debugger-prompt-regexp geiser-chicken--prompt-regexp)
 
 ;;; Evaluation support:
 
@@ -177,22 +159,6 @@ This function uses `geiser-chicken-init-file' if it exists."
   (save-excursion (skip-syntax-backward "^-()>") (point)))
 
 ;;; Error display
-
-(defun geiser-chicken--enter-debugger ()
-  (message "Attempted to enter the debugger.")
-  ;; (let ((bt-cmd (format ",geiser-newline\n,error-message\n,%s\n"
-  ;;                       (if geiser-chicken-debug-show-bt-p "bt" "fr"))))
-  ;;   (compilation-forget-errors)
-  ;;   (goto-char (point-max))
-  ;;   (geiser-repl--prepare-send)
-  ;;   (comint-send-string nil bt-cmd)
-  ;;   (when geiser-chicken-show-debug-help-p
-  ;;     (message "Debug REPL. Enter ,q to quit, ,h for help."))
-  ;;   (when geiser-chicken-jump-on-debug-p
-  ;;     (accept-process-output (get-buffer-process (current-buffer))
-  ;;                            0.2 nil t)
-  ;;     (ignore-errors (next-error))))
-  nil)
 
 (defun geiser-chicken--display-error (module key msg)
   (newline)
@@ -296,14 +262,15 @@ This function uses `geiser-chicken-init-file' if it exists."
 ;;; Implementation definition:
 
 (define-geiser-implementation chicken
+  (unsupported-procedures '(callers callees generic-methods))
   (binary geiser-chicken--binary)
   (arglist geiser-chicken--parameters)
   (version-command geiser-chicken--version)
   (minimum-version geiser-chicken-minimum-version)
   (repl-startup geiser-chicken--startup)
   (prompt-regexp geiser-chicken--prompt-regexp)
-  (debugger-prompt-regexp geiser-chicken--debugger-prompt-regexp)
-  (enter-debugger geiser-chicken--enter-debugger)
+  (debugger-prompt-regexp nil)
+  (enter-debugger nil)
   (marshall-procedure geiser-chicken--geiser-procedure)
   (find-module geiser-chicken--get-module)
   (enter-command geiser-chicken--enter-command)
