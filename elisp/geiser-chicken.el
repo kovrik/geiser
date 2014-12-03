@@ -122,7 +122,7 @@ This function uses `geiser-chicken-init-file' if it exists."
                              geiser-chicken-load-path))
     ,@(and init-file (file-readable-p init-file) (list init-file)))))
 
-(defconst geiser-chicken--prompt-regexp "[^>]+> ")
+(defconst geiser-chicken--prompt-regexp "#[^;]*;[^:0-9]*:?[0-9]+> ")
 (defconst geiser-chicken--debugger-prompt-regexp geiser-chicken--prompt-regexp)
 
 ;;; Evaluation support:
