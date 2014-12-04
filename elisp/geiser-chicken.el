@@ -122,7 +122,7 @@ This function uses `geiser-chicken-init-file' if it exists."
                (mapconcat 'identity args " ")))))
 
 (defconst geiser-chicken--module-re
-  "(module +\\(([^) ]+)\\)|(define-library +\\(([^) ]+)\\)")
+  "(module +\\(([^)]+)\\|[^ ]+\\)\\|(define-library +\\(([^)]+)\\|[^ ]+\\)")
 
 (defun geiser-chicken--get-module (&optional module)
   (cond ((null module)
