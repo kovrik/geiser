@@ -290,7 +290,7 @@
 (define-toplevel-for-geiser geiser-eval
   (let* ((module (get-arg))
          (form (get-arg))
-         (env (if module (module-environment module) #f)))
+         (env (handle-exceptions exn #f (module-environment module))))
     (geiser-call-with-result
      (lambda ()
        (if env
