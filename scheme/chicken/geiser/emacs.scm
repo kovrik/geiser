@@ -6,6 +6,7 @@
 (use posix)
 (use chicken-doc)
 (use srfi-1)
+(use utils)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Symbol lists
@@ -381,41 +382,53 @@
 
 (define geiser-load-paths (make-parameter '()))
 
+(define-toplevel-for-geiser geiser-find-file
+  (define (try-find file paths)
+    (cond
+     ((null? paths) #f)
+     ((file-exists? (string-append (car paths) file))
+      (string-append (car paths) file))
+     (else (try-find file (cdr paths)))))
+  (let ((file (get-arg))
+        (paths (append '("" ".") (geiser-load-paths))))
+    (try-find file paths)))
+
 (define-toplevel-for-geiser geiser-add-to-load-path 
   (let* ((directory (get-arg))
-         (directory (if (symbol? directory) (symbol->string directory) directory)))
-    (if (directory-exists? directory)
-        (geiser-load-paths (cons directory (geiser-load-paths)))
-        #f)))
+         (directory (if (symbol? directory) 
+                        (symbol->string directory)
+                        directory))
+         (directory (if (not (equal? #\/ (string-ref directory (- (string-length directory 1))))) 
+                        (string-append directory "/")
+                        directory)))
+    (geiser-call-with-result
+     (lambda ()
+       (when (directory-exists? directory)
+           (geiser-load-paths (cons directory (geiser-load-paths))))))))
 
 (define-toplevel-for-geiser geiser-load-file 
   (let* ((file (get-arg))
-         (file (if (symbol? file) (symbol->string file) file)))
-    (define (try-load file paths)
-      (cond
-       ((null? paths) #f)
-       ((file-exists? (string-append (car paths) "/" file))
-        (load (string-append (car paths) "/" file)))
-       (else (try-load file (cdr paths)))))
-    (try-load file (cons "." (geiser-load-paths)))))
+         (file (if (symbol? file) (symbol->string file) file))
+         (found-file (geiser-find-file file)))
+    (geiser-call-with-result
+     (lambda ()
+       (when found-file
+         (load found-file))))))
+
+(define-toplevel-for-geiser geiser-compile-file 
+  (let* ((file (get-arg))
+         (file (if (symbol? file) (symbol->string file) file))
+         (found-file (geiser-find-file file)))
+    (geiser-call-with-result
+     (lambda ()
+       (when found-file
+         (compile-file found-file))))))
 
 ;; TODO: Support compiling regions
 (define-toplevel-for-geiser geiser-compile 
   (let ((form (get-arg))
         (module (get-arg)))
     (error "Chicken does not support compiling regions")))
-
-(define-toplevel-for-geiser geiser-compile-file 
-  (let ((path (get-arg)))
-    (compile-file path)))
-
-;; TODO: Search through available load paths
-;; How to discover those?
-(define-toplevel-for-geiser geiser-find-file 
-  (let ((path (get-arg)))
-    (if (file-exists? path)
-        path
-        #f)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Modules
