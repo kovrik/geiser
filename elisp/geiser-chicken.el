@@ -111,15 +111,19 @@ This function uses `geiser-chicken-init-file' if it exists."
 
 (defun geiser-chicken--geiser-procedure (proc &rest args)
   (case proc
-    ((eval compile) (format ",geiser-eval %s %s"
-                            (or (car args) "#f")
-                            (mapconcat 'identity (cdr args) " ")))
-    ((load-file compile-file) (format ",geiser-load-file %s" 
-                                      (car args)))
-    ((no-values) ",geiser-no-values")
-    (t (format "(geiser-%s %s)" 
-               proc 
-               (mapconcat 'identity args " ")))))
+    ((eval compile)
+     (let ((form (mapconcat 'identity (cdr args) " ")))
+       ;; We cannot allow evaluation within a module if a module is being defined
+       (if (string-match geiser-chicken--module-re form)
+         (format ",geiser-eval #f %s" form)
+         (format ",geiser-eval %s %s" (or (car args) "#f") form))))
+    ((load-file compile-file)
+     (format ",geiser-load-file %s" (car args)))
+    ((no-values) 
+     ",geiser-no-values")
+    (t 
+     (let ((form (mapconcat 'identity args " ")))
+       (format "(geiser-%s %s)" proc form)))))
 
 (defconst geiser-chicken--module-re
   "(module +\\(([^)]+)\\|[^ ]+\\)\\|(define-library +\\(([^)]+)\\|[^ ]+\\)")
@@ -151,9 +155,9 @@ This function uses `geiser-chicken-init-file' if it exists."
   (geiser-chicken--module-cmd module "(use %s)"))
 
 (defun geiser-chicken--enter-command (module)
-  (geiser-chicken--module-cmd module ",m %s" "chicken"))
+  (geiser-chicken--module-cmd module ",m %s" module))
 
-(defun geiser-chicken--exit-command () ",q")
+(defun geiser-chicken--exit-command () ",m #f")
 
 (defun geiser-chicken--symbol-begin (module)
   (save-excursion (skip-syntax-backward "^-()>") (point)))
