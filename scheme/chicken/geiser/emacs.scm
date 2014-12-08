@@ -15,12 +15,12 @@
    geiser-load-file
    geiser-compile-file
    geiser-compile
-   geiser-module-name?
    geiser-module-exports
    geiser-module-path
    geiser-module-location
    geiser-macroexpand
-   make-geiser-toplevel-bindings)
+   make-geiser-toplevel-bindings
+   without-current-module)
   
   (import chicken scheme extras data-structures ports csi)
 
@@ -128,8 +128,25 @@
 ;; Utilities
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+  (define (make-apropos-regex toplevel-module prefix)
+    (let* ((prefix (->string prefix))
+           (prefix-module (if toplevel-module
+                              (string-append toplevel-module "#" prefix)
+                              #f)))
+      (string-append 
+       (if prefix-module
+           (string-append "^" prefix-module "|")
+           "")
+       "^" prefix)))
+
+  ;; ;; Returns true if every element of the list could be a module name
+  ;; (define (module-name? module-name) 
+  ;;   (and (list? module-name)
+  ;;        (not (null? module-name))
+  ;;        (every symbol? module-name)))
+
   ;; Wraps output from geiser functions
-  (define (geiser-call-with-result thunk)
+  (define (call-with-result thunk)
     ;; This really should be a chicken library function
     (define (write-exception exn)
       (define (write-call-entry call)
@@ -137,9 +154,9 @@
               (line (vector-ref call 1)))
           (cond
            ((equal? type "<syntax>")
-            (display (format "~a ~a" type line)) (newline))
+            (write type) (write " ") (write line) (newline))
            ((equal? type "<eval>")
-            (display (format "~a   ~a" type line)) (newline)))))
+            (write type) (write "   ") (write line) (newline)))))
 
       (display (format "Error: (~s) ~s: ~s"
                        ((condition-property-accessor 'exn 'location) exn)
@@ -192,13 +209,13 @@
            (,(r 'geiser-toplevel-functions) (cons (cons ',name ,name) (geiser-toplevel-functions)))))))
 
   ;; Locates all installed extensions
-  (define (geiser-installed-extensions)
+  (define (installed-extensions)
     (let ((output (call-with-input-pipe "chicken-status" read-all)))
       (sort! (irregex-split "\\n" (irregex-replace/all " [^\\n]*" output))
              string<?)))
 
   ;; Locates any paths at which a particular symbol might be located
-  (define (geiser-find-library-paths id types)
+  (define (find-library-paths id types)
     ;; Removes the given id from the node path
     (define (remove-self-id id path)
       (cond
@@ -211,10 +228,7 @@
        (else
         (cons (car path) (remove-self-id id (cdr path))))))
 
-    (let ((id (cond
-               ((string? id) (string->symbol))
-               ((symbol? id) id)
-               (else (error "Expected either a symbol or string.")))))
+    (let ((id (->string id)))
       (append
        (if (any (lambda (sym) (eq? sym id)) (geiser-r5rs-symbols))
            '((r5rs))
@@ -237,41 +251,62 @@
   ;; Builds a signature list from an identifier
   ;; The format is:
   ;; ((,id (args ((required [signature]) (optional) (key))) (module [module path]) [(error "not found")]) ...)
-  (define (geiser-find-signatures id)
+  (define (find-signatures toplevel-module id)
     (define (fmt node)
       (let ((id (car node))
-            (type (cdr node)))
+            (module (cadr node))
+            (type (cddr node)))
         (cond
          ((equal? 'macro type)
           `(,id (args ((required)
                        (optional)
                        (key)))
-                (module ,@(geiser-find-library-paths id '(procedure syntax)))))
-         ((and (list? type)
+                (module ,@(if (not module) 
+                              (find-library-paths id '(procedure syntax))
+                              (list module)))))
+         ((and (or (list? type) (pair? type))
                (let ((type (car type)))
                  (or (eq? 'procedure type)
                      (eq? 'record type)
                      (eq? 'setter type)
                      (eq? 'class type)
                      (eq? 'method type))))
-          `(,id (args ((required ,@(cdr type))
-                       (optional)
-                       (key)))
-                (module ,@(geiser-find-library-paths id '(procedure)))))
+          (let ((reqs '())
+                (opts '()))
+            (define (collect-args args)
+              (when (not (null? args))
+                (cond
+                 ((or (pair? args) (list? args)) 
+                  (set! reqs (append reqs (list (car args))))
+                  (collect-args (cdr args)))
+                 (else
+                  (set! opts (list args '..))))))
+            (collect-args (cdr type))
+
+            `(,id (args ((required ,@reqs)
+                         (optional ,@opts)
+                         (key)))
+                  (module ,@(if (not module) 
+                                (find-library-paths id '(procedure record setter class method))
+                                (list module))))))
          (else
           `(,id (args ((required)
                        (optional)
                        (key)))
-                (module))))))
+                (module ,@(if (not module) '() (list module))))))))
 
     (define (find id)
-      (let ((id (cond 
-                 ((string? id) (string->symbol id)) 
-                 ((symbol? id) id)
-                 (else (error "Expected a symbol or string")))))
-        (filter
-         (lambda (s) (equal? (car s) id))
-         (apropos-information-list id #:macros? #t))))
+      (filter
+       (lambda (s)
+         ;; Remove egg name and add module
+         (let* ((str (symbol->string (car s)))
+                (name (string-substitute ".*#([^#]+)" "\\1" str))
+                (module (string-substitute "(.*)#[^#]+" "\\1" str))
+                (module (if (equal? str module) #f module)))
+           (set! (car s) name)
+           (set! (cdr s) (cons module (cdr s)))
+           (equal? name (->string id))))
+       (apropos-information-list (regexp (make-apropos-regex toplevel-module id)) #:macros? #t)))
 
     (let* ((res (map fmt (find id))))
       (if (null? res)
@@ -281,7 +316,7 @@
           res)))
 
   ;; Takes a list of signatures and prepares them for geiser
-  (define (geiser-export-signatures! sigs)
+  (define (export-signatures! sigs)
     (define (export! sig)
       (cond
        ((null? sig) sig)
@@ -297,7 +332,7 @@
     sigs)
 
   ;; Builds the documentation from Chicken Doc for a specific ymbol
-  (define (geiser-make-doc symbol #!optional (filter-for-type #f))
+  (define (make-doc symbol #!optional (filter-for-type #f))
     (with-output-to-string 
       (lambda () 
         (map (lambda (node)
@@ -322,34 +357,87 @@
      (geiser-toplevel-functions)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Geiser core functions
+;; Geiser toplevel functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
   ;; Basically all non-core functions pass through geiser-eval
 
   (define-toplevel-for-geiser geiser-eval
-    (let* ((module (get-arg))
-           (form (get-arg))
-           (env (handle-exceptions exn #f (module-environment module))))
-      (geiser-call-with-result
-       (lambda ()
+    ;; We can't allow nested module definitions in Chicken
+    (define (form-has-module? form)
+      (let ((reg "\\( *module +|\\( *define-library"))
+        (string-search reg form)))
+
+    ;; Chicken doesn't support calling toplevel functions through eval,
+    ;; So when we're in a module or calling into an environment we have
+    ;; to first call from the toplevel environment and then switch
+    ;; into the desired env.
+    (define (form-has-geiser? form)
+      (let ((reg "\\( *geiser-"))
+        (string-search reg form)))
+
+    ;; Rather than failing gracefully with #f, module-environment throws
+    ;; an exception.
+    (define (find-environment module)
+      (handle-exceptions exn #f (module-environment module)))
+
+    ;; All calls start at toplevel
+    (without-current-module
+     (let* ((module (get-arg))
+            (form (get-arg))
+            (str-form (format "~s" form))
+            (is-module? (form-has-module? str-form))
+            (is-geiser? (form-has-geiser? str-form))
+            (env (and (not is-module?)
+                      (not is-geiser?)
+                      (find-environment module))))
+
+       ;; Inject environment as the first parameter
+       (when is-geiser?
+         (let ((module 
+                 (if module 
+                     (->string module)
+                     #f)))
+           (set! form
+                 `(begin
+                    (import geiser)
+                    ,(cons (car form) (cons module (cdr form)))))))
+
+       (define (thunk)
          (if env
              (eval form env)
-             (eval form))))))
+             (eval form)))
 
-    ;; The no-values identity
+       (call-with-result thunk))))
 
+  ;; Load a file
+
+  (define-toplevel-for-geiser geiser-load-file 
+    (let* ((file (get-arg))
+           (file (if (symbol? file) (symbol->string file) file))
+           (found-file (geiser-find-file #f file)))
+      (call-with-result
+       (lambda ()
+         (when found-file
+           (load found-file))))))
+
+  ;; The no-values identity
+  
   (define-toplevel-for-geiser geiser-no-values
     (values))
 
-    ;; Invoke a newline
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Miscellaneous
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  (define-toplevel-for-geiser geiser-newline
+  ;; Invoke a newline
+
+  (define (geiser-newline . rest)
     (newline))
 
-    ;; Spawn a server for remote repl access
+  ;; Spawn a server for remote repl access
 
-  (define-toplevel-for-geiser geiser-start-server
+  (define (geiser-start-server . rest)
     (let* ((listener (tcp-listen 0))
            (port (tcp-listener-port listener)))
       (define (remote-repl)
@@ -369,52 +457,45 @@
 ;; Completions, Autodoc and Signature
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-
-  (define-toplevel-for-geiser geiser-completions 
-    (let* ((prefix (get-arg))
-           (prefix (if (symbol? prefix) (symbol->string prefix) prefix))
-           (re (regexp (string-append "^" (regexp-escape prefix)))))
+  (define (geiser-completions toplevel-module prefix . rest)
+    ;; We search both toplevel definitions and module definitions
+    (let* ((prefix (if (symbol? prefix) (symbol->string prefix) prefix))
+           (re (regexp (make-apropos-regex toplevel-module prefix))))
       (sort! (map (lambda (sym)
                     ;; Strip out the egg name
                     (string-substitute ".*#([^#]+)" "\\1" (->string sym)))
                   (apropos-list re #:macros? #t))
              string<?)))
 
-  (define-toplevel-for-geiser geiser-module-completions
-    (let* ((prefix (get-arg))
-           (match (string-append "^" (regexp-escape prefix))))
+  (define (geiser-module-completions toplevel-module prefix . rest)
+    (let* ((match (string-append "^" (regexp-escape prefix))))
       (filter (lambda (v) (string-search match v))
-              (geiser-installed-extensions))))
+              (installed-extensions))))
 
-  (define-toplevel-for-geiser geiser-autodoc 
-    (let ((ids (get-arg)))
-      (define (generate-details id)
-        (geiser-export-signatures! (geiser-find-signatures id)))
+  (define (geiser-autodoc toplevel-module ids . rest) 
+    (define (generate-details id)
+      (export-signatures! (find-signatures toplevel-module id)))
 
-      (if (list? ids)
-          (foldr append '()
-                 (map generate-details ids))
-          '())))
+    (if (list? ids)
+        (foldr append '()
+               (map generate-details ids))
+        '()))
 
-  (define-toplevel-for-geiser geiser-object-signature 
-    (let* ((name (get-arg))
-           (object (get-arg))
-           (sig (geiser-autodoc `(,name))))
+  (define (geiser-object-signature toplevel-module name object . rest) 
+    (let* ((sig (geiser-autodoc toplevel-module `(,name))))
       (if (null? sig) '() (car sig))))
 
     ;; TODO: Divine some way to support this functionality
 
-  (define-toplevel-for-geiser geiser-symbol-location 
-    (let ((symbol (get-arg)))
-      '(("file") ("line"))))
+  (define (geiser-symbol-location toplevel-module symbol . rest) 
+    '(("file") ("line")))
 
-  (define-toplevel-for-geiser geiser-symbol-documentation
-    (let* ((symbol (get-arg))
-           (sig (geiser-find-signatures symbol)))
+  (define (geiser-symbol-documentation toplevel-module symbol . rest)
+    (let* ((sig (find-signatures toplevel-module symbol)))
       (if (null? sig) 
           '() 
-          `(("signature" ,@(geiser-export-signatures! (car sig))) 
-            ("docstring" . ,(geiser-make-doc symbol))))))
+          `(("signature" ,@(export-signatures! (car sig))) 
+            ("docstring" . ,(make-doc symbol))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; File and Buffer Operations
@@ -422,9 +503,8 @@
 
   (define geiser-load-paths (make-parameter '()))
 
-  (define-toplevel-for-geiser geiser-find-file
-    (let ((file (get-arg))
-          (paths (append '("" ".") (geiser-load-paths))))
+  (define (geiser-find-file toplevel-module file . rest)
+    (let ((paths (append '("" ".") (geiser-load-paths))))
       (define (try-find file paths)
         (cond
          ((null? paths) #f)
@@ -433,33 +513,22 @@
          (else (try-find file (cdr paths)))))
       (try-find file paths)))
 
-  (define-toplevel-for-geiser geiser-add-to-load-path 
-    (let* ((directory (get-arg))
-           (directory (if (symbol? directory) 
+  (define (geiser-add-to-load-path toplevel-module directory . rest) 
+    (let* ((directory (if (symbol? directory) 
                           (symbol->string directory)
                           directory))
            (directory (if (not (equal? #\/ (string-ref directory (- (string-length directory 1))))) 
                           (string-append directory "/")
                           directory)))
-      (geiser-call-with-result
+      (call-with-result
        (lambda ()
          (when (directory-exists? directory)
            (geiser-load-paths (cons directory (geiser-load-paths))))))))
 
-  (define-toplevel-for-geiser geiser-load-file 
-    (let* ((file (get-arg))
-           (file (if (symbol? file) (symbol->string file) file))
-           (found-file (geiser-find-file file)))
-      (geiser-call-with-result
-       (lambda ()
-         (when found-file
-           (load found-file))))))
-
-  (define-toplevel-for-geiser geiser-compile-file 
-    (let* ((file (get-arg))
-           (file (if (symbol? file) (symbol->string file) file))
-           (found-file (geiser-find-file file)))
-      (geiser-call-with-result
+  (define (geiser-compile-file toplevel-module file . rest) 
+    (let* ((file (if (symbol? file) (symbol->string file) file))
+           (found-file (geiser-find-file toplevel-module file)))
+      (call-with-result
        (lambda ()
          (when found-file
            (without-current-module
@@ -467,29 +536,17 @@
 
     ;; TODO: Support compiling regions
 
-  (define-toplevel-for-geiser geiser-compile 
-    (let ((form (get-arg))
-          (module (get-arg)))
-      (error "Chicken does not support compiling regions")))
+  (define (geiser-compile toplevel-module form module . rest) 
+    (error "Chicken does not support compiling regions"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Modules
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-    ;; Returns true if every element of the list could be a module name
-
-  (define-toplevel-for-geiser geiser-module-name? 
-    (let ((module-name (get-arg)))
-      (and (list? module-name)
-           (not (null? module-name))
-           (every symbol? module-name))))
-
-    ;; Should return:
-    ;; '(("modules" . sub-modules) ("procs" . procedures) ("syntax" . macros) ("vars" . variables))
-
-  (define-toplevel-for-geiser geiser-module-exports 
-    (let* ((module-name (get-arg))
-           (nodes (match-nodes module-name)))
+  ;; Should return:
+  ;; '(("modules" . sub-modules) ("procs" . procedures) ("syntax" . macros) ("vars" . variables))
+  (define (geiser-module-exports toplevel-module module-name . rest) 
+    (let* ((nodes (match-nodes module-name)))
       (if (null? nodes)
           '()
           (let ((mod '())
@@ -523,28 +580,25 @@
               ("syntax" . ,syn)
               ("vars" . ,var))))))
 
-    ;; Returns the path for the file in which an egg or module was defined
+  ;; Returns the path for the file in which an egg or module was defined
 
-  (define-toplevel-for-geiser geiser-module-path 
-    (let ((module-name (get-arg)))
-      #f))
+  (define (geiser-module-path toplevel-module module-name . rest) 
+    #f)
 
-    ;; Returns:
-    ;; `(("file" . ,(module-path name)) ("line"))
+  ;; Returns:
+  ;; `(("file" . ,(module-path name)) ("line"))
 
-  (define-toplevel-for-geiser geiser-module-location 
-    (let ((name (get-arg)))
-      #f))
+  (define (geiser-module-location toplevel-module name . rest) 
+    #f)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Misc
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  (define-toplevel-for-geiser geiser-macroexpand
-    (let ((form (get-arg)))
-      (with-output-to-string
-        (lambda ()
-          (pretty-print (expand form))))))
+  (define (geiser-macroexpand toplevel-module form . rest)
+    (with-output-to-string
+      (lambda ()
+        (pretty-print (expand form)))))
 
 ;; End module    
   )

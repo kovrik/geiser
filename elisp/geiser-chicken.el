@@ -113,10 +113,7 @@ This function uses `geiser-chicken-init-file' if it exists."
   (case proc
     ((eval compile)
      (let ((form (mapconcat 'identity (cdr args) " ")))
-       ;; We cannot allow evaluation within a module if a module is being defined
-       (if (string-match geiser-chicken--module-re form)
-         (format ",geiser-eval #f %s" form)
-         (format ",geiser-eval %s %s" (or (car args) "#f") form))))
+       (format ",geiser-eval %s %s" (or (car args) "#f") form)))
     ((load-file compile-file)
      (format ",geiser-load-file %s" (car args)))
     ((no-values) 
@@ -126,7 +123,7 @@ This function uses `geiser-chicken-init-file' if it exists."
        (format "(geiser-%s %s)" proc form)))))
 
 (defconst geiser-chicken--module-re
-  "(module +\\(([^)]+)\\|[^ ]+\\)\\|(define-library +\\(([^)]+)\\|[^ ]+\\)")
+  "( *module +\\(([^)]+)\\|[^ ]+\\)\\|( *define-library +\\(([^)]+)\\|[^ ]+\\)")
 
 (defun geiser-chicken--get-module (&optional module)
   (cond ((null module)
@@ -144,7 +141,7 @@ This function uses `geiser-chicken-init-file' if it exists."
            (error :f)))
         (t :f)))
 
-(defun geiser-chicken--module-cmd (module fmt &optional default)
+(defun geiser-chicken--module-cmd (module fmt &optional def)
   (when module
     (let* ((module (geiser-chicken--get-module module))
            (module (cond ((or (null module) (eq module :f)) def)
