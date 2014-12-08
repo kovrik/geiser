@@ -110,17 +110,20 @@ This function uses `geiser-chicken-init-file' if it exists."
 ;;; Evaluation support:
 
 (defun geiser-chicken--geiser-procedure (proc &rest args)
-  (case proc
-    ((eval compile)
-     (let ((form (mapconcat 'identity (cdr args) " ")))
-       (format ",geiser-eval %s %s" (or (car args) "#f") form)))
-    ((load-file compile-file)
-     (format ",geiser-load-file %s" (car args)))
-    ((no-values) 
-     ",geiser-no-values")
-    (t 
-     (let ((form (mapconcat 'identity args " ")))
-       (format "(geiser-%s %s)" proc form)))))
+  (let ((fmt
+         (case proc
+           ((eval compile)
+            (let ((form (mapconcat 'identity (cdr args) " ")))
+              (format ",geiser-eval %s %s" (or (car args) "#f") form)))
+           ((load-file compile-file)
+            (format ",geiser-load-file %s" (car args)))
+           ((no-values) 
+            ",geiser-no-values")
+           (t 
+            (let ((form (mapconcat 'identity args " ")))
+              (format "(geiser-%s %s)" proc form))))))
+    (message fmt)
+    fmt))
 
 (defconst geiser-chicken--module-re
   "( *module +\\(([^)]+)\\|[^ ]+\\)\\|( *define-library +\\(([^)]+)\\|[^ ]+\\)")

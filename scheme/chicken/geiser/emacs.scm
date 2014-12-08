@@ -20,7 +20,8 @@
    geiser-module-location
    geiser-macroexpand
    make-geiser-toplevel-bindings
-   without-current-module)
+   without-current-module
+   with-module)
   
   (import chicken scheme extras data-structures ports csi)
 
@@ -347,8 +348,13 @@
 
   (define-syntax without-current-module 
     (syntax-rules ()
-      ((_ ..)
-       (parameterize ((##sys#current-module #f)) ..))))
+      ((_ . rest)
+       (parameterize ((##sys#current-module #f)) (begin . rest)))))
+
+  (define-syntax with-module
+    (syntax-rules ()
+      ((_ module . rest)
+       (parameterize ((##sys#current-module (if module (##sys#find-module module) #f))) (begin . rest)))))
 
   (define (make-geiser-toplevel-bindings)
     (map
@@ -365,7 +371,7 @@
   (define-toplevel-for-geiser geiser-eval
     ;; We can't allow nested module definitions in Chicken
     (define (form-has-module? form)
-      (let ((reg "\\( *module +|\\( *define-library"))
+      (let ((reg "\\( *module +|\\( *define-library +"))
         (string-search reg form)))
 
     ;; Chicken doesn't support calling toplevel functions through eval,
@@ -376,39 +382,34 @@
       (let ((reg "\\( *geiser-"))
         (string-search reg form)))
 
-    ;; Rather than failing gracefully with #f, module-environment throws
-    ;; an exception.
-    (define (find-environment module)
-      (handle-exceptions exn #f (module-environment module)))
-
     ;; All calls start at toplevel
-    (without-current-module
-     (let* ((module (get-arg))
-            (form (get-arg))
-            (str-form (format "~s" form))
-            (is-module? (form-has-module? str-form))
-            (is-geiser? (form-has-geiser? str-form))
-            (env (and (not is-module?)
-                      (not is-geiser?)
-                      (find-environment module))))
+    (let* ((module (get-arg))
+           (form (get-arg))
+           (str-form (format "~s" form))
+           (is-module? (form-has-module? str-form))
+           (is-geiser? (form-has-geiser? str-form))
+           (host-module (and (not is-module?)
+                             (not is-geiser?)
+                             module)))
 
-       ;; Inject environment as the first parameter
-       (when is-geiser?
-         (let ((module 
-                 (if module 
-                     (->string module)
-                     #f)))
-           (set! form
-                 `(begin
-                    (import geiser)
-                    ,(cons (car form) (cons module (cdr form)))))))
+      ;; Inject environment as the first parameter
+      (when is-geiser?
+        (let ((module 
+                (if module 
+                    (->string module)
+                    #f)))
+          (set! form (cons (car form) (cons module (cdr form))))))
 
-       (define (thunk)
-         (if env
-             (eval form env)
-             (eval form)))
+      (set! form `(,@(if host-module 
+                         `(with-module ',host-module) 
+                         '(without-current-module)) 
+                   ,@(if is-geiser? '((import geiser)) '()) 
+                   ,form))
 
-       (call-with-result thunk))))
+      (define (thunk)
+        (eval form))
+
+      (call-with-result thunk)))
 
   ;; Load a file
 
