@@ -122,7 +122,7 @@ This function uses `geiser-chicken-init-file' if it exists."
            (t 
             (let ((form (mapconcat 'identity args " ")))
               (format "(geiser-%s %s)" proc form))))))
-    (message fmt)
+    ;;(message fmt)
     fmt))
 
 (defconst geiser-chicken--module-re
