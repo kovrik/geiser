@@ -19,9 +19,7 @@
    geiser-module-path
    geiser-module-location
    geiser-macroexpand
-   make-geiser-toplevel-bindings
-   without-current-module
-   with-module)
+   make-geiser-toplevel-bindings)
   
   (import chicken scheme extras data-structures ports csi)
 
@@ -147,7 +145,7 @@
   ;;        (every symbol? module-name)))
 
   ;; Wraps output from geiser functions
-  (define (call-with-result thunk)
+  (define (call-with-result module thunk)
     ;; This really should be a chicken library function
     (define (write-exception exn)
       (define (write-call-entry call)
@@ -178,9 +176,20 @@
            thunk))))
 
     (let* ((result (if #f #f))
-           (output (handle-exceptions exn 
-                                      (with-all-output-to-string (lambda () (write-exception exn)))
-                                      (with-all-output-to-string (lambda () (call-with-values thunk (lambda v (set! result v))))))))
+           (output (if #f #f))
+           (module (if module (##sys#find-module module) #f))
+           (original-module (##sys#current-module)))
+
+      (set! output
+            (handle-exceptions exn 
+             (with-all-output-to-string 
+              (lambda () (write-exception exn)))
+             (with-all-output-to-string
+              (lambda () 
+                (##sys#switch-module module)
+                (call-with-values thunk (lambda v (set! result v)))))))
+
+      (##sys#switch-module original-module)
 
       (set! result (if (list? result) 
                        (map (lambda (v) (with-output-to-string (lambda () (write v)))) result)
@@ -349,16 +358,6 @@
                     (eq? (node-type n) filter-for-type)))
               (match-nodes symbol))))))
 
-  (define-syntax without-current-module 
-    (syntax-rules ()
-      ((_ . rest)
-       (parameterize ((##sys#current-module #f)) (begin . rest)))))
-
-  (define-syntax with-module
-    (syntax-rules ()
-      ((_ module . rest)
-       (parameterize ((##sys#current-module (if module (##sys#find-module module) #f))) (begin . rest)))))
-
   (define (make-geiser-toplevel-bindings)
     (map
      (lambda (pair)
@@ -403,16 +402,14 @@
                     #f)))
           (set! form (cons (car form) (cons module (cdr form))))))
 
-      (set! form `(,@(if host-module 
-                         `(with-module ',host-module) 
-                         '(without-current-module)) 
-                   ,@(if is-geiser? '((import geiser)) '()) 
-                   ,form))
+      ;; (set! form `(begin
+      ;;              ,@(if is-geiser? '((import geiser)) '()) 
+      ;;              ,form))
 
       (define (thunk)
         (eval form))
 
-      (call-with-result thunk)))
+      (call-with-result host-module thunk)))
 
   ;; Load a file
 
@@ -421,6 +418,7 @@
            (file (if (symbol? file) (symbol->string file) file))
            (found-file (geiser-find-file #f file)))
       (call-with-result
+       #f
        (lambda ()
          (when found-file
            (load found-file))))))
@@ -524,7 +522,7 @@
            (directory (if (not (equal? #\/ (string-ref directory (- (string-length directory 1))))) 
                           (string-append directory "/")
                           directory)))
-      (call-with-result
+      (call-with-result #f
        (lambda ()
          (when (directory-exists? directory)
            (geiser-load-paths (cons directory (geiser-load-paths))))))))
@@ -532,11 +530,10 @@
   (define (geiser-compile-file toplevel-module file . rest) 
     (let* ((file (if (symbol? file) (symbol->string file) file))
            (found-file (geiser-find-file toplevel-module file)))
-      (call-with-result
+      (call-with-result #f
        (lambda ()
          (when found-file
-           (without-current-module
-            (compile-file found-file)))))))
+           (compile-file found-file))))))
 
     ;; TODO: Support compiling regions
 
