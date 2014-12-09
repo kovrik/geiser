@@ -132,11 +132,12 @@
   (define switch-module ##sys#switch-module)
   (define module-name ##sys#module-name)
 
+  (define (maybe-call func val)
+    (if val (func val) #f))
+
   (define (make-apropos-regex toplevel-module prefix)
     (let* ((prefix (->string prefix))
-           (prefix-module (if toplevel-module
-                              (string-append toplevel-module "#" prefix)
-                              #f)))
+           (prefix-module (maybe-call (lambda (v) (string-append v "#" prefix)) toplevel-module)))
       (string-append 
        (if prefix-module
            (string-append "^" prefix-module "|")
@@ -176,7 +177,7 @@
 
     (let* ((result (if #f #f))
            (output (if #f #f))
-           (module (if module (find-module module) #f))
+           (module (maybe-call (lambda (v) (find-module module)) module))
            (original-module (current-module)))
 
       (set! output
@@ -391,17 +392,14 @@
            (is-geiser? (form-has-geiser? str-form))
            (host-module (and (not is-module?)
                              (not is-geiser?)
-                             module)))
+                             (or module))))
 
       (when (and module (not (symbol? module)))
         (error "Module should be a symbol"))
 
       ;; Inject the desired module as the first parameter
       (when is-geiser?
-        (let ((module 
-                (if module 
-                    (symbol->string module)
-                    #f)))
+        (let ((module (maybe-call (lambda (v) (symbol->string module)) module)))
           (set! form (cons (car form) (cons module (cdr form))))))
 
       (define (thunk)
@@ -415,8 +413,7 @@
     (let* ((file (get-arg))
            (file (if (symbol? file) (symbol->string file) file))
            (found-file (geiser-find-file #f file)))
-      (call-with-result
-       #f
+      (call-with-result #f
        (lambda ()
          (when found-file
            (load found-file))))))
