@@ -175,14 +175,16 @@
           (with-error-output-to-port 
            (current-output-port)
            ;; Convert all values to a list
-           (call-with-values thunk (lambda v v))))))
+           thunk))))
 
     (let* ((result (if #f #f))
            (output (handle-exceptions exn 
                                       (with-all-output-to-string (lambda () (write-exception exn)))
-                                      (with-all-output-to-string (lambda () (set! result (thunk)))))))
+                                      (with-all-output-to-string (lambda () (call-with-values thunk (lambda v (set! result v))))))))
 
-      (set! result (map (lambda (v) (with-output-to-string (lambda () (write v)))) result))
+      (set! result (if (list? result) 
+                       (map (lambda (v) (with-output-to-string (lambda () (write v)))) result)
+                       (list (with-output-to-string (lambda () (write result))))))
 
       (write `((result ,@result)
                (output . ,output)))
