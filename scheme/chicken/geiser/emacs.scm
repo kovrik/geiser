@@ -127,6 +127,11 @@
 ;; Utilities
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+  (define find-module ##sys#find-module)
+  (define current-module ##sys#current-module)
+  (define switch-module ##sys#switch-module)
+  (define module-name ##sys#module-name)
+
   (define (make-apropos-regex toplevel-module prefix)
     (let* ((prefix (->string prefix))
            (prefix-module (if toplevel-module
@@ -137,12 +142,6 @@
            (string-append "^" prefix-module "|")
            "")
        "^" prefix)))
-
-  ;; ;; Returns true if every element of the list could be a module name
-  ;; (define (module-name? module-name) 
-  ;;   (and (list? module-name)
-  ;;        (not (null? module-name))
-  ;;        (every symbol? module-name)))
 
   ;; Wraps output from geiser functions
   (define (call-with-result module thunk)
@@ -177,8 +176,8 @@
 
     (let* ((result (if #f #f))
            (output (if #f #f))
-           (module (if module (##sys#find-module module) #f))
-           (original-module (##sys#current-module)))
+           (module (if module (find-module module) #f))
+           (original-module (current-module)))
 
       (set! output
             (handle-exceptions exn 
@@ -186,10 +185,10 @@
               (lambda () (write-exception exn)))
              (with-all-output-to-string
               (lambda () 
-                (##sys#switch-module module)
+                (switch-module module)
                 (call-with-values thunk (lambda v (set! result v)))))))
 
-      (##sys#switch-module original-module)
+      (switch-module original-module)
 
       (set! result (if (list? result) 
                        (map (lambda (v) (with-output-to-string (lambda () (write v)))) result)
@@ -394,17 +393,16 @@
                              (not is-geiser?)
                              module)))
 
-      ;; Inject environment as the first parameter
+      (when (and module (not (symbol? module)))
+        (error "Module should be a symbol"))
+
+      ;; Inject the desired module as the first parameter
       (when is-geiser?
         (let ((module 
                 (if module 
-                    (->string module)
+                    (symbol->string module)
                     #f)))
           (set! form (cons (car form) (cons module (cdr form))))))
-
-      ;; (set! form `(begin
-      ;;              ,@(if is-geiser? '((import geiser)) '()) 
-      ;;              ,form))
 
       (define (thunk)
         (eval form))
@@ -464,8 +462,8 @@
     (let* ((prefix (if (symbol? prefix) (symbol->string prefix) prefix))
            (re (regexp (make-apropos-regex toplevel-module prefix))))
       (sort! (map (lambda (sym)
-                    ;; Strip out the egg name
-                    (string-substitute ".*#([^#]+)" "\\1" (->string sym)))
+                    ;; Strip out everything before the prefix
+                    (string-substitute (string-append ".*(" prefix ".*)") "\\1" (symbol->string sym)))
                   (apropos-list re #:macros? #t))
              string<?)))
 
