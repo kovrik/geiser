@@ -18,6 +18,7 @@
    geiser-module-exports
    geiser-module-path
    geiser-module-location
+   geiser-module-completions
    geiser-macroexpand
    make-geiser-toplevel-bindings)
   
@@ -32,6 +33,11 @@
   (use chicken-doc)
   (use srfi-1)
   (use utils)
+
+  (cond-expand
+   (use-debug-log
+    (use posix))
+   (else '()))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Symbol lists
@@ -123,58 +129,68 @@
                 require-extension select set! unless use when with-input-from-pipe match
                 match-lambda match-lambda* match-let match-let* receive)))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Utilities
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; Utilities
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
   (define find-module ##sys#find-module)
   (define current-module ##sys#current-module)
   (define switch-module ##sys#switch-module)
   (define module-name ##sys#module-name)
+  (define (list-modules) (map car ##sys#module-table))
+
+  (define (write-to-log form) #f)
+
+  (cond-expand
+   (use-debug-log
+    (begin
+      (define debug-log (make-parameter #f))
+      (define (write-to-log form)
+        (when (not (debug-log))
+          (debug-log (file-open "~/geiser-log.txt" (+ open/wronly open/append open/text open/creat)))
+          (set-file-position! (debug-log) 0 seek/end))
+        (file-write (debug-log) (with-all-output-to-string (lambda () (write form) (newline))))
+        (file-write (debug-log) "\n"))))
+   (else '()))
+
+  ;; This really should be a chicken library function
+  (define (write-exception exn)
+    (define (write-call-entry call)
+      (let ((type (vector-ref call 0))
+            (line (vector-ref call 1)))
+        (cond
+         ((equal? type "<syntax>")
+          (write type) (write " ") (write line) (newline))
+         ((equal? type "<eval>")
+          (write type) (write "   ") (write line) (newline)))))
+
+    (display (format "Error: (~s) ~s: ~s"
+                     ((condition-property-accessor 'exn 'location) exn)
+                     ((condition-property-accessor 'exn 'message) exn)
+                     ((condition-property-accessor 'exn 'arguments) exn)))
+    (newline)
+    (display "Call history: ") (newline)
+    (map write-call-entry ((condition-property-accessor 'exn 'call-chain) exn))
+    (newline))
+
+  ;; And this should be a chicken library function as well
+  (define (with-all-output-to-string thunk)
+    (with-output-to-string
+      (lambda ()
+        (with-error-output-to-port 
+         (current-output-port)
+         ;; Convert all values to a list
+         thunk))))
+
 
   (define (maybe-call func val)
     (if val (func val) #f))
 
-  (define (make-apropos-regex toplevel-module prefix)
-    (let* ((prefix (->string prefix))
-           (prefix-module (maybe-call (lambda (v) (string-append v "#" prefix)) toplevel-module)))
-      (string-append 
-       (if prefix-module
-           (string-append "^" prefix-module "|")
-           "")
-       "^" prefix)))
+  (define (make-apropos-regex prefix)
+    (string-append "([^#]#)*" (->string prefix)))
 
   ;; Wraps output from geiser functions
   (define (call-with-result module thunk)
-    ;; This really should be a chicken library function
-    (define (write-exception exn)
-      (define (write-call-entry call)
-        (let ((type (vector-ref call 0))
-              (line (vector-ref call 1)))
-          (cond
-           ((equal? type "<syntax>")
-            (write type) (write " ") (write line) (newline))
-           ((equal? type "<eval>")
-            (write type) (write "   ") (write line) (newline)))))
-
-      (display (format "Error: (~s) ~s: ~s"
-                       ((condition-property-accessor 'exn 'location) exn)
-                       ((condition-property-accessor 'exn 'message) exn)
-                       ((condition-property-accessor 'exn 'arguments) exn)))
-      (newline)
-      (display "Call history: ") (newline)
-      (map write-call-entry ((condition-property-accessor 'exn 'call-chain) exn))
-      (newline))
-
-    ;; And this should be a chicken library function as well
-    (define (with-all-output-to-string thunk)
-      (with-output-to-string
-        (lambda ()
-          (with-error-output-to-port 
-           (current-output-port)
-           ;; Convert all values to a list
-           thunk))))
-
     (let* ((result (if #f #f))
            (output (if #f #f))
            (module (maybe-call (lambda (v) (find-module module)) module))
@@ -195,8 +211,12 @@
                        (map (lambda (v) (with-output-to-string (lambda () (write v)))) result)
                        (list (with-output-to-string (lambda () (write result))))))
 
-      (write `((result ,@result)
-               (output . ,output)))
+      (let ((out-form
+             `((result ,@result)
+               (output . ,output))))
+        (write out-form)
+        (write-to-log out-form))
+
       (newline)))
 
   (define geiser-toplevel-functions (make-parameter '()))
@@ -220,12 +240,6 @@
                    arg)))
             (begin ,@body))
            (,(r 'geiser-toplevel-functions) (cons (cons ',name ,name) (geiser-toplevel-functions)))))))
-
-  ;; Locates all installed extensions
-  (define (installed-extensions)
-    (let ((output (call-with-input-pipe "chicken-status" read-all)))
-      (sort! (irregex-split "\\n" (irregex-replace/all " [^\\n]*" output))
-             string<?)))
 
   ;; Locates any paths at which a particular symbol might be located
   (define (find-library-paths id types)
@@ -319,29 +333,24 @@
            (set! (car s) name)
            (set! (cdr s) (cons module (cdr s)))
            (equal? name (->string id))))
-       (apropos-information-list (regexp (make-apropos-regex toplevel-module id)) #:macros? #t)))
+       (apropos-information-list (regexp (make-apropos-regex id)) #:macros? #t)))
 
-    (let* ((res (map fmt (find id))))
-      (if (null? res)
-          `((,id (args ((required) (optional) (key))) 
-                 (module "") 
-                 (error "not found")))
-          res)))
+    (map fmt (find id)))
 
   ;; Takes a list of signatures and prepares them for geiser
   (define (export-signatures! sigs)
-    (define (export! sig)
+    (define (export! sig head?)
       (cond
        ((null? sig) sig)
        ((list? (car sig))
-        (export! (car sig))
-        (export! (cdr sig)))
-       ((symbol? (car sig))
+        (export! (car sig) #t)
+        (export! (cdr sig) #f))
+       ((and head? (symbol? (car sig)))
         (set! (car sig) (symbol->string (car sig)))
-        (export! (cdr sig)))
+        (export! (cdr sig) #f))
        (else 
-        (export! (cdr sig)))))
-    (export! sigs)
+        (export! (cdr sig) #f))))
+    (export! sigs #f)
     sigs)
 
   ;; Builds the documentation from Chicken Doc for a specific ymbol
@@ -405,6 +414,8 @@
       (define (thunk)
         (eval form))
 
+      (write-to-log form)
+
       (call-with-result host-module thunk)))
 
   ;; Load a file
@@ -457,17 +468,18 @@
   (define (geiser-completions toplevel-module prefix . rest)
     ;; We search both toplevel definitions and module definitions
     (let* ((prefix (if (symbol? prefix) (symbol->string prefix) prefix))
-           (re (regexp (make-apropos-regex toplevel-module prefix))))
+           (re (regexp (make-apropos-regex prefix))))
       (sort! (map (lambda (sym)
                     ;; Strip out everything before the prefix
-                    (string-substitute (string-append ".*(" prefix ".*)") "\\1" (symbol->string sym)))
-                  (apropos-list re #:macros? #t))
+                    (string-substitute (string-append ".*(" prefix ".*)") "\\1" sym))
+                  (append (map symbol->string (apropos-list re #:macros? #t))
+                          (geiser-module-completions toplevel-module prefix)))
              string<?)))
 
   (define (geiser-module-completions toplevel-module prefix . rest)
     (let* ((match (string-append "^" (regexp-escape prefix))))
       (filter (lambda (v) (string-search match v))
-              (installed-extensions))))
+              (map symbol->string (list-modules)))))
 
   (define (geiser-autodoc toplevel-module ids . rest) 
     (define (generate-details id)
