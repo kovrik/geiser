@@ -300,14 +300,16 @@
                      (eq? 'method type))))
           (let ((reqs '())
                 (opts '()))
+            (define (clean-arg arg)
+              (string->symbol (string-substitute "(.*[^0-9]+)[0-9]+" "\\1" (symbol->string arg))))
             (define (collect-args args)
               (when (not (null? args))
                 (cond
                  ((or (pair? args) (list? args)) 
-                  (set! reqs (append reqs (list (car args))))
+                  (set! reqs (append reqs (list (clean-arg (car args)))))
                   (collect-args (cdr args)))
                  (else
-                  (set! opts (list args '..))))))
+                  (set! opts (list (clean-arg args) '..))))))
             (collect-args (cdr type))
 
             `(,id (args ((required ,@reqs)
