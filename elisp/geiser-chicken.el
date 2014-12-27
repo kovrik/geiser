@@ -157,7 +157,7 @@ This function uses `geiser-chicken-init-file' if it exists."
 (defun geiser-chicken--enter-command (module)
   (geiser-chicken--module-cmd module ",m %s" module))
 
-(defun geiser-chicken--exit-command () ",m #f")
+(defun geiser-chicken--exit-command () ",q")
 
 (defun geiser-chicken--symbol-begin (module)
   (save-excursion (skip-syntax-backward "^-()>") (point)))
