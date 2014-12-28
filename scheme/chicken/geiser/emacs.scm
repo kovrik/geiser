@@ -22,17 +22,23 @@
    geiser-macroexpand
    make-geiser-toplevel-bindings)
   
-  (import chicken scheme extras data-structures ports csi)
+  (import chicken 
+          scheme 
+          extras 
+          data-structures 
+          ports 
+          csi)
 
-  (use apropos)
-  (use regex)
-  (use irregex)
-  (use srfi-18)
-  (use tcp)
-  (use posix)
-  (use chicken-doc)
-  (use srfi-1)
-  (use utils)
+  (use apropos
+       regex
+       irregex
+       srfi-18
+       tcp
+       posix
+       chicken-doc
+       srfi-1
+       utils
+       symbol-utils)
 
   (cond-expand
    (use-debug-log
@@ -275,6 +281,12 @@
              (any (lambda (t) (eq? type t)) types)))
          (match-nodes id))))))
 
+  (define (try-eval symbol)
+    (if (unbound? symbol)
+        '()
+        (handle-exceptions exn '()
+          (eval symbol))))
+
   ;; Builds a signature list from an identifier
   ;; The format is:
   ;; ((,id (args ((required [signature]) (optional) (key))) (module [module path]) [(error "not found")]) ...)
@@ -282,13 +294,12 @@
     (define (fmt node)
       (let ((id (car node))
             (module (cadr node))
-            (type (cddr node)))
+            (type (cddr node))
+            (value (try-eval (if (string? id) (string->symbol id) id))))
         (cond
          ((equal? 'macro type)
-          `(,id (args ((required)
-                       (optional)
-                       (key)))
-                (module ,@(if (not module) 
+          `(,id ("value" . ,value)
+                ("module" ,@(if (not module) 
                               (find-library-paths id '(procedure syntax))
                               (list module)))))
          ((and (or (list? type) (pair? type))
@@ -309,20 +320,19 @@
                   (set! reqs (append reqs (list (clean-arg (car args)))))
                   (collect-args (cdr args)))
                  (else
-                  (set! opts (list (clean-arg args) '..))))))
+                  (set! opts (list (clean-arg args) '...))))))
             (collect-args (cdr type))
 
-            `(,id (args ((required ,@reqs)
-                         (optional ,@opts)
-                         (key)))
-                  (module ,@(if (not module) 
+            `(,id ("args" (("required" ,@reqs)
+                            ("optional" ,@opts)
+                            ("key")))
+                  ("value" . ,value)
+                  ("module" ,@(if (not module) 
                                 (find-library-paths id '(procedure record setter class method))
                                 (list module))))))
          (else
-          `(,id (args ((required)
-                       (optional)
-                       (key)))
-                (module ,@(if (not module) '() (list module))))))))
+          `(,id ("value" . ,value)
+                ("module" ,@(if (not module) '() (list module))))))))
 
     (define (find id)
       (filter
@@ -338,22 +348,6 @@
        (apropos-information-list (regexp (make-apropos-regex id)) #:macros? #t)))
 
     (map fmt (find id)))
-
-  ;; Takes a list of signatures and prepares them for geiser
-  (define (export-signatures! sigs)
-    (define (export! sig head?)
-      (cond
-       ((null? sig) sig)
-       ((list? (car sig))
-        (export! (car sig) #t)
-        (export! (cdr sig) #f))
-       ((and head? (symbol? (car sig)))
-        (set! (car sig) (symbol->string (car sig)))
-        (export! (cdr sig) #f))
-       (else 
-        (export! (cdr sig) #f))))
-    (export! sigs #f)
-    sigs)
 
   ;; Builds the documentation from Chicken Doc for a specific ymbol
   (define (make-doc symbol #!optional (filter-for-type #f))
@@ -485,7 +479,7 @@
 
   (define (geiser-autodoc toplevel-module ids . rest) 
     (define (generate-details id)
-      (export-signatures! (find-signatures toplevel-module id)))
+      (find-signatures toplevel-module id))
 
     (if (list? ids)
         (foldr append '()
@@ -503,10 +497,8 @@
 
   (define (geiser-symbol-documentation toplevel-module symbol . rest)
     (let* ((sig (find-signatures toplevel-module symbol)))
-      (if (null? sig) 
-          '() 
-          `(("signature" ,@(export-signatures! (car sig))) 
-            ("docstring" . ,(make-doc symbol))))))
+      `(("signature" ,@(car sig)) 
+        ("docstring" . ,(make-doc symbol)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; File and Buffer Operations
