@@ -288,5 +288,8 @@ This function uses `geiser-chicken-init-file' if it exists."
   (case-sensitive geiser-chicken-case-sensitive-p))
 
 (geiser-impl--add-to-alist 'regexp "\\.scm$" 'chicken t)
+(geiser-impl--add-to-alist 'regexp "\\.release-info$" 'chicken t)
+(geiser-impl--add-to-alist 'regexp "\\.meta$" 'chicken t)
+(geiser-impl--add-to-alist 'regexp "\\.setup$" 'chicken t)
 
 (provide 'geiser-chicken)
