@@ -1,5 +1,4 @@
 (module geiser
-
   ;; A bunch of these needn't be toplevel functions
   (geiser-eval
    geiser-no-values
@@ -21,29 +20,29 @@
    geiser-module-completions
    geiser-macroexpand
    make-geiser-toplevel-bindings)
-  
+
+  ;; Necessary built in units
   (import chicken 
           scheme 
           extras 
           data-structures 
           ports 
-          csi)
+          csi
+          irregex
+          srfi-1
+          posix
+          utils)
 
   (use apropos
        regex
-       irregex
-       srfi-18
-       tcp
-       posix
        chicken-doc
-       srfi-1
-       utils
-       symbol-utils)
+       tcp
+       srfi-18)
 
-  (cond-expand
-   (use-debug-log
-    (use posix))
-   (else '()))
+  (define use-debug-log #f)
+  
+  (if use-debug-log
+   (use posix))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Symbol lists
@@ -147,17 +146,15 @@
 
   (define (write-to-log form) #f)
 
-  (cond-expand
-   (use-debug-log
-    (begin
-      (define debug-log (make-parameter #f))
-      (define (write-to-log form)
-        (when (not (debug-log))
-          (debug-log (file-open "~/geiser-log.txt" (+ open/wronly open/append open/text open/creat)))
-          (set-file-position! (debug-log) 0 seek/end))
-        (file-write (debug-log) (with-all-output-to-string (lambda () (write form) (newline))))
-        (file-write (debug-log) "\n"))))
-   (else '()))
+  (if use-debug-log
+   (begin
+     (define debug-log (make-parameter #f))
+     (define (write-to-log form)
+       (when (not (debug-log))
+         (debug-log (file-open "~/geiser-log.txt" (+ open/wronly open/append open/text open/creat)))
+         (set-file-position! (debug-log) 0 seek/end))
+       (file-write (debug-log) (with-all-output-to-string (lambda () (write form) (newline))))
+       (file-write (debug-log) "\n"))))
 
   ;; This really should be a chicken library function
   (define (write-exception exn)
@@ -194,6 +191,13 @@
 
   (define (make-apropos-regex prefix)
     (string-append "([^#]#)*" (->string prefix)))
+
+  (define (describe-symbol sym #!key (exact? #f))
+    (let* ((sym (if (string? sym) sym (->string sym)))
+           (found (apropos-information-list (regexp (make-apropos-regex sym)) #:macros? #t)))
+      (if exact?
+          (filter (lambda (v) (equal? (->string (car v)) sym)) found)
+          found)))
 
   ;; Wraps output from geiser functions
   (define (call-with-result module thunk)
@@ -280,59 +284,71 @@
            (let ((type (node-type n)))
              (any (lambda (t) (eq? type t)) types)))
          (match-nodes id))))))
-
-  (define (try-eval symbol)
-    (if (unbound? symbol)
-        '()
-        (handle-exceptions exn '()
-          (eval symbol))))
-
+  
   ;; Builds a signature list from an identifier
   ;; The format is:
   ;; ((,id (args ((required [signature]) (optional) (key))) (module [module path]) [(error "not found")]) ...)
   (define (find-signatures toplevel-module id)
+    (set! id (if (string? id) (string->symbol id) id))
     (define (fmt node)
-      (let ((id (car node))
+      (let ((entry-id (car node))
             (module (cadr node))
-            (type (cddr node))
-            (value (try-eval (if (string? id) (string->symbol id) id))))
+            (rest (cddr node)))
         (cond
-         ((equal? 'macro type)
-          `(,id ("value" . ,value)
+         ((equal? 'macro rest)
+          `(,entry-id ("value" . 'macro)
                 ("module" ,@(if (not module) 
-                              (find-library-paths id '(procedure syntax))
+                              (find-library-paths entry-id '(procedure syntax))
                               (list module)))))
-         ((and (or (list? type) (pair? type))
-               (let ((type (car type)))
-                 (or (eq? 'procedure type)
-                     (eq? 'record type)
-                     (eq? 'setter type)
-                     (eq? 'class type)
-                     (eq? 'method type))))
+         (else
           (let ((reqs '())
-                (opts '()))
+                (opts '())
+                (keys '())
+                (type (if (or (list? rest) (pair? rest)) (car rest) rest))
+                (args (if (or (list? rest) (pair? rest)) (cdr rest) '())))
+
             (define (clean-arg arg)
-              (string->symbol (string-substitute "(.*[^0-9]+)[0-9]+" "\\1" (symbol->string arg))))
-            (define (collect-args args)
+              (string->symbol (string-substitute "(.*[^0-9]+)[0-9]+" "\\1" (->string arg))))
+            
+            (define (collect-args args #!key (reqs? #t) (opts? #f) (keys? #f))
               (when (not (null? args))
                 (cond
-                 ((or (pair? args) (list? args)) 
-                  (set! reqs (append reqs (list (clean-arg (car args)))))
-                  (collect-args (cdr args)))
+                 ((or (pair? args) (list? args))
+                  (cond
+                   ((eq? '#!key (car args))
+                    (collect-args (cdr args) reqs?: #f opts?: #f keys?: #t))
+                   ((eq? '#!optional (car args))
+                    (collect-args (cdr args) reqs?: #f opts?: #t keys?: #f))
+                   (else
+                    (begin
+                      (cond
+                       (reqs?
+                        (set! reqs (append reqs (list (clean-arg (car args))))))
+                       (opts?
+                        (set! opts (append opts (list (clean-arg (caar args))))))
+                       (keys?
+                        (set! keys (append keys (list (clean-arg (caar args)))))))
+                      (collect-args (cdr args))))))
                  (else
                   (set! opts (list (clean-arg args) '...))))))
-            (collect-args (cdr type))
+            (collect-args args)
 
-            `(,id ("args" (("required" ,@reqs)
-                            ("optional" ,@opts)
-                            ("key")))
-                  ("value" . ,value)
-                  ("module" ,@(if (not module) 
-                                (find-library-paths id '(procedure record setter class method))
-                                (list module))))))
-         (else
-          `(,id ("value" . ,value)
-                ("module" ,@(if (not module) '() (list module))))))))
+            (define value
+              (if (and (equal? entry-id (->string id))
+                       (or (eq? 'variable type) (eq? 'constant type)))
+                  (eval id)
+                  type))
+
+            (define module
+              (if (not module) 
+                  (find-library-paths entry-id '(procedure record setter class method))
+                  (list module)))
+            
+            `(,entry-id ("args" (("required" ,@reqs)
+                                 ("optional" ,@opts)
+                                 ("key" ,@keys)))
+                        ("value" . ,value)
+                        ("module" ,@module)))))))
 
     (define (find id)
       (filter
@@ -345,7 +361,7 @@
            (set! (car s) name)
            (set! (cdr s) (cons module (cdr s)))
            (equal? name (->string id))))
-       (apropos-information-list (regexp (make-apropos-regex id)) #:macros? #t)))
+       (describe-symbol id)))
 
     (map fmt (find id)))
 
