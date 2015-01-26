@@ -470,6 +470,9 @@
 
       (thread-start! (make-thread remote-repl))
 
+      (write-to-log `(geiser-start-server . ,rest))
+      (write-to-log `(port ,port))
+      
       (write `(port ,port))
       (newline)))
 
