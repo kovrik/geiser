@@ -190,13 +190,15 @@
     (if val (func val) #f))
 
   (define (make-apropos-regex prefix)
-    (string-append "([^#]#)*" (->string prefix)))
+    (string-append "^([^#]#)*" prefix))
 
   (define (describe-symbol sym #!key (exact? #f))
-    (let* ((sym (if (string? sym) sym (->string sym)))
-           (found (apropos-information-list (regexp (make-apropos-regex sym)) #:macros? #t)))
+    (let* ((str (symbol->string sym))
+           (found (apropos-information-list (regexp (make-apropos-regex str)) #:macros? #t)))
       (if exact?
-          (filter (lambda (v) (equal? (->string (car v)) sym)) found)
+          (filter (lambda (v)
+                    (equal? str (string-substitute ".*#([^#]+)" "\\1" (symbol->string (car v)))))
+                  found)
           found)))
 
   ;; Wraps output from geiser functions
@@ -252,53 +254,51 @@
            (,(r 'geiser-toplevel-functions) (cons (cons ',name ,name) (geiser-toplevel-functions)))))))
 
   ;; Locates any paths at which a particular symbol might be located
-  (define (find-library-paths id types)
-    ;; Removes the given id from the node path
-    (define (remove-self-id id path)
+  (define (find-library-paths sym types)
+    ;; Removes the given sym from the node path
+    (define (remove-self sym path)
       (cond
        ((not (list? path)) path)
        ((null? path) path)
        ((null? (cdr path))
-        (if (eq? (car path) id)
+        (if (eq? (car path) sym)
             '()
             path))
        (else
-        (cons (car path) (remove-self-id id (cdr path))))))
+        (cons (car path) (remove-self sym (cdr path))))))
 
-    (let ((id (->string id)))
-      (append
-       (if (any (lambda (sym) (eq? sym id)) (geiser-r5rs-symbols))
-           '((r5rs))
-           '())
-       (if (any (lambda (sym) (eq? sym id)) (geiser-r7rs-small-symbols))
-           '((r7rs))
-           '())
-       (if (any (lambda (sym) (eq? sym id)) (geiser-chicken-builtin-symbols))
-           '((chicken))
-           '())
-       (map
-        (lambda (node)
-          (remove-self-id id (node-path node))) 
-        (filter 
-         (lambda (n) 
-           (let ((type (node-type n)))
-             (any (lambda (t) (eq? type t)) types)))
-         (match-nodes id))))))
+    (append
+     (if (any (lambda (5sym) (eq? 5sym sym)) (geiser-r5rs-symbols))
+         '((r5rs))
+         '())
+     (if (any (lambda (7sym) (eq? 7sym sym)) (geiser-r7rs-small-symbols))
+         '((r7rs))
+         '())
+     (if (any (lambda (csym) (eq? csym sym)) (geiser-chicken-builtin-symbols))
+         '((chicken))
+         '())
+     (map
+      (lambda (node)
+        (remove-self sym (node-path node))) 
+      (filter 
+       (lambda (n) 
+         (let ((type (node-type n)))
+           (any (lambda (t) (eq? type t)) types)))
+       (match-nodes sym)))))
   
   ;; Builds a signature list from an identifier
   ;; The format is:
   ;; ((,id (args ((required [signature]) (optional) (key))) (module [module path]) [(error "not found")]) ...)
-  (define (find-signatures toplevel-module id)
-    (set! id (if (string? id) (string->symbol id) id))
+  (define (find-signatures toplevel-module sym)
     (define (fmt node)
-      (let ((entry-id (car node))
+      (let ((entry-sym (car node))
             (module (cadr node))
             (rest (cddr node)))
         (cond
          ((equal? 'macro rest)
-          `(,entry-id ("value" . 'macro)
+          `(,entry-sym ("value" . "<macro>")
                 ("module" ,@(if (not module) 
-                              (find-library-paths entry-id '(procedure syntax))
+                              (find-library-paths entry-sym '(procedure syntax))
                               (list module)))))
          (else
           (let ((reqs '())
@@ -308,7 +308,7 @@
                 (args (if (or (list? rest) (pair? rest)) (cdr rest) '())))
 
             (define (clean-arg arg)
-              (string->symbol (string-substitute "(.*[^0-9]+)[0-9]+" "\\1" (->string arg))))
+              (string->symbol (string-substitute "(.*[^0-9]+)[0-9]+" "\\1" (symbol->string arg))))
             
             (define (collect-args args #!key (reqs? #t) (opts? #f) (keys? #f))
               (when (not (null? args))
@@ -331,39 +331,40 @@
                       (collect-args (cdr args))))))
                  (else
                   (set! opts (list (clean-arg args) '...))))))
-            (collect-args args)
+
+            ;; Don't bother to clean and collect arguments if they won't be shown
+            (when (equal? entry-sym sym)
+              (collect-args args))
 
             (define value
-              (if (and (equal? entry-id (->string id))
+              (if (and (equal? entry-sym sym)
                        (or (eq? 'variable type) (eq? 'constant type)))
-                  (eval id)
-                  type))
+                  (eval sym)
+                  (string-append "<" (symbol->string type) ">")))
 
             (define module
               (if (not module) 
-                  (find-library-paths entry-id '(procedure record setter class method))
+                  (find-library-paths entry-sym '(procedure record setter class method))
                   (list module)))
             
-            `(,entry-id ("args" (("required" ,@reqs)
+            `(,entry-sym ("args" (("required" ,@reqs)
                                  ("optional" ,@opts)
                                  ("key" ,@keys)))
                         ("value" . ,value)
                         ("module" ,@module)))))))
 
-    (define (find id)
-      (filter
+    (define (find sym)
+      (map
        (lambda (s)
          ;; Remove egg name and add module
          (let* ((str (symbol->string (car s)))
-                (name (string-substitute ".*#([^#]+)" "\\1" str))
+                (name (string->symbol (string-substitute ".*#([^#]+)" "\\1" str)))
                 (module (string-substitute "(.*)#[^#]+" "\\1" str))
                 (module (if (equal? str module) #f module)))
-           (set! (car s) name)
-           (set! (cdr s) (cons module (cdr s)))
-           (equal? name (->string id))))
-       (describe-symbol id)))
+           (cons name (cons module (cdr s)))))
+       (describe-symbol sym)))
 
-    (map fmt (find id)))
+    (map fmt (find sym)))
 
   ;; Builds the documentation from Chicken Doc for a specific ymbol
   (define (make-doc symbol #!optional (filter-for-type #f))
@@ -470,6 +471,9 @@
 
       (thread-start! (make-thread remote-repl))
 
+      (write-to-log `(geiser-start-server . ,rest))
+      (write-to-log `(port ,port))
+      
       (write `(port ,port))
       (newline)))
 
@@ -484,18 +488,18 @@
       (sort! (map (lambda (sym)
                     ;; Strip out everything before the prefix
                     (string-substitute (string-append ".*(" prefix ".*)") "\\1" sym))
-                  (append (map symbol->string (apropos-list re #:macros? #t))
+                  (append (apropos-list re #:macros? #t)
                           (geiser-module-completions toplevel-module prefix)))
              string<?)))
 
   (define (geiser-module-completions toplevel-module prefix . rest)
     (let* ((match (string-append "^" (regexp-escape prefix))))
-      (filter (lambda (v) (string-search match v))
-              (map symbol->string (list-modules)))))
+      (filter (lambda (v) (string-search match (symbol->string v)))
+              (list-modules))))
 
   (define (geiser-autodoc toplevel-module ids . rest) 
-    (define (generate-details id)
-      (find-signatures toplevel-module id))
+    (define (generate-details sym)
+      (find-signatures toplevel-module sym))
 
     (if (list? ids)
         (foldr append '()
