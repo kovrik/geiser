@@ -39,7 +39,7 @@
        tcp
        srfi-18)
 
-  (define use-debug-log #f)
+  (define use-debug-log #t)
   
   (if use-debug-log
    (use posix))
@@ -190,7 +190,7 @@
     (if val (func val) #f))
 
   (define (make-apropos-regex prefix)
-    (string-append "^([^#]#)*" prefix))
+    (string-append "([^#]#)*" prefix))
 
   (define (describe-symbol sym #!key (exact? #f))
     (let* ((str (symbol->string sym))
@@ -290,21 +290,20 @@
   ;; The format is:
   ;; ((,id (args ((required [signature]) (optional) (key))) (module [module path]) [(error "not found")]) ...)
   (define (find-signatures toplevel-module sym)
+    (define str (symbol->string sym))
+    
     (define (fmt node)
-      (let ((entry-sym (car node))
-            (module (cadr node))
-            (rest (cddr node)))
+      (let* ((entry-str (car node))
+             (exact-match? (equal? str entry-str))
+             (module (cadr node))
+             (rest (cddr node)))
         (cond
          ((equal? 'macro rest)
-          `(,entry-sym ("value" . "<macro>")
-                ("module" ,@(if (not module) 
-                              (find-library-paths entry-sym '(procedure syntax))
-                              (list module)))))
+          `(,entry-str ("value" . "<macro>")))
          (else
           (let ((reqs '())
                 (opts '())
                 (keys '())
-                (exact-match? (equal? sym entry-sym))
                 (type (if (or (list? rest) (pair? rest)) (car rest) rest))
                 (args (if (or (list? rest) (pair? rest)) (cdr rest) '())))
 
@@ -343,28 +342,20 @@
                ((or (eq? 'variable type) (eq? 'constant type))
                 (eval sym))
                (else (string-append "<" (symbol->string type) ">"))))
-
-            (define module
-              (cond
-               ((not exact-match?) "<unevaluated>")
-               ((not module)
-                (find-library-paths entry-sym '(procedure record setter class method)))
-               (else (list module))))
             
-            `(,entry-sym ("args" (("required" ,@reqs)
-                                 ("optional" ,@opts)
-                                 ("key" ,@keys)))
-                        ("value" . ,value)
-                        ("module" ,@module)))))))
+            `(,entry-str ("args" (("required" ,@reqs)
+                                  ("optional" ,@opts)
+                                  ("key" ,@keys)))
+                         ("value" . ,value)
+                         ("module" ,@module)))))))
 
     (define (find sym)
       (map
        (lambda (s)
          ;; Remove egg name and add module
          (let* ((str (symbol->string (car s)))
-                (name (string->symbol (string-substitute ".*#([^#]+)" "\\1" str)))
-                (module (string-substitute "(.*)#[^#]+" "\\1" str))
-                (module (if (equal? str module) #f module)))
+                (name (string-substitute ".*#([^#]+)" "\\1" str))
+                (module (string-substitute "^([^#]+)#[^#]+$" "\\1" str)))
            (cons name (cons module (cdr s)))))
        (describe-symbol sym)))
 
