@@ -304,6 +304,7 @@
           (let ((reqs '())
                 (opts '())
                 (keys '())
+                (exact-match? (equal? sym entry-sym))
                 (type (if (or (list? rest) (pair? rest)) (car rest) rest))
                 (args (if (or (list? rest) (pair? rest)) (cdr rest) '())))
 
@@ -333,19 +334,22 @@
                   (set! opts (list (clean-arg args) '...))))))
 
             ;; Don't bother to clean and collect arguments if they won't be shown
-            (when (equal? entry-sym sym)
+            (when exact-match?
               (collect-args args))
 
             (define value
-              (if (and (equal? entry-sym sym)
-                       (or (eq? 'variable type) (eq? 'constant type)))
-                  (eval sym)
-                  (string-append "<" (symbol->string type) ">")))
+              (cond
+               ((not exact-match?) "<unevaluated>")
+               ((or (eq? 'variable type) (eq? 'constant type))
+                (eval sym))
+               (else (string-append "<" (symbol->string type) ">"))))
 
             (define module
-              (if (not module) 
-                  (find-library-paths entry-sym '(procedure record setter class method))
-                  (list module)))
+              (cond
+               ((not exact-match?) "<unevaluated>")
+               ((not module)
+                (find-library-paths entry-sym '(procedure record setter class method)))
+               (else (list module))))
             
             `(,entry-sym ("args" (("required" ,@reqs)
                                  ("optional" ,@opts)
