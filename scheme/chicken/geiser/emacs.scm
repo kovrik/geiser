@@ -185,12 +185,11 @@
          ;; Convert all values to a list
          thunk))))
 
-
   (define (maybe-call func val)
     (if val (func val) #f))
 
   (define (make-apropos-regex prefix)
-    (string-append "([^#]#)*" prefix))
+    (string-append "^([^#]+#)*" prefix))
 
   (define (describe-symbol sym #!key (exact? #f))
     (let* ((str (symbol->string sym))
@@ -299,7 +298,11 @@
              (rest (cddr node)))
         (cond
          ((equal? 'macro rest)
-          `(,entry-str ("value" . "<macro>")))
+          `(,entry-str ("args" (("required" '<macro>)
+                                ("optional" '...)
+                                ("key")))
+                       ("value")
+                       ("module" ,@module)))
          (else
           (let ((reqs '())
                 (opts '())
@@ -325,9 +328,9 @@
                        (reqs?
                         (set! reqs (append reqs (list (clean-arg (car args))))))
                        (opts?
-                        (set! opts (append opts (list (clean-arg (caar args))))))
+                        (set! opts (append opts (list (cons (clean-arg (caar args)) (cdar args))))))
                        (keys?
-                        (set! keys (append keys (list (clean-arg (caar args)))))))
+                        (set! keys (append keys (list (cons (clean-arg (caar args)) (cdar args)))))))
                       (collect-args (cdr args))))))
                  (else
                   (set! opts (list (clean-arg args) '...))))))
@@ -355,7 +358,10 @@
          ;; Remove egg name and add module
          (let* ((str (symbol->string (car s)))
                 (name (string-substitute ".*#([^#]+)" "\\1" str))
-                (module (string-substitute "^([^#]+)#[^#]+$" "\\1" str)))
+                (module
+                    (if (string-search "#" str)
+                        (string-substitute "^([^#]+)#[^#]+$" "\\1" str)
+                        '())))
            (cons name (cons module (cdr s)))))
        (describe-symbol sym)))
 
@@ -577,20 +583,13 @@
                      (name (node-id node))
                      (path (node-path node)))
                  (cond
-                  ((or (eq? 'unit type) 
-                       (eq? 'egg type))
+                  ((memq type '(unit egg))
                    (set! mod (cons name mod)))
-                  ((or (eq? 'procedure type) 
-                       (eq? 'record type)
-                       (eq? 'setter type)
-                       (eq? 'class type)
-                       (eq? 'method type))
+                  ((memq type '(procedure record setter class method))
                    (set! proc (cons name proc)))
-                  ((or (eq? 'read type)
-                       (eq? 'syntax type))
+                  ((memq type '(read syntax))
                    (set! syn (cons name syn)))
-                  ((or (eq? 'parameter type)
-                       (eq? 'constant type))
+                  ((memq type '(parameter constant))
                    (set! var (cons name var))))))
              nodes)
             `(("modules" . ,mod)
