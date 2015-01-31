@@ -145,10 +145,10 @@
   (define (list-modules) (map car ##sys#module-table))
 
   (define (write-to-log form) #f)
-
+  (define debug-log (make-parameter #f))
+     
   (if use-debug-log
    (begin
-     (define debug-log (make-parameter #f))
      (define (write-to-log form)
        (when (not (debug-log))
          (debug-log (file-open "~/geiser-log.txt" (+ open/wronly open/append open/text open/creat)))
