@@ -283,6 +283,21 @@
             (begin ,@body))
            (,(r 'geiser-toplevel-functions) (cons (cons ',name ,name) (geiser-toplevel-functions)))))))
 
+  (define (find-standards-with-symbol sym)
+    (append
+     (if (any (cut eq? <> sym) (geiser-r4rs-symbols))
+         '(r4rs)
+         '())
+     (if (any (cut eq? <> sym) (geiser-r5rs-symbols))
+         '(r5rs)
+         '())
+     (if (any (cut eq? <> sym) (geiser-r7rs-small-symbols))
+         '(r7rs)
+         '())
+     (if (any (cut eq? <> sym) (geiser-chicken-builtin-symbols))
+         '(chicken)
+         '())))
+  
   ;; Locates any paths at which a particular symbol might be located
   (define (find-library-paths sym types)
     ;; Removes the given sym from the node path
@@ -298,18 +313,9 @@
         (cons (car path) (remove-self sym (cdr path))))))
 
     (append
-     (if (any (cut eq? <> sym) (geiser-r4rs-symbols))
-         '((r4rs))
-         '())
-     (if (any (cut eq? <> sym) (geiser-r5rs-symbols))
-         '((r5rs))
-         '())
-     (if (any (cut eq? <> sym) (geiser-r7rs-small-symbols))
-         '((r7rs))
-         '())
-     (if (any (cut eq? <> sym) (geiser-chicken-builtin-symbols))
-         '((chicken))
-         '())
+     (map
+      (cut list <>)
+      (find-standards-with-symbol sym))
      (map
       (lambda (node)
         (remove-self sym (node-path node))) 
@@ -325,7 +331,7 @@
     
     (define (fmt node)
       (let* ((entry-str (car node))
-             (module (cadr node))
+             (module (flatten (find-standards-with-symbol sym) (cadr node)))
              (rest (cddr node))
              (type (if (or (list? rest) (pair? rest)) (car rest) rest)))
         (cond
@@ -337,7 +343,8 @@
          ((or (equal? 'variable type)
               (equal? 'constant type))
           (if (null? module)
-              `(,entry-str ("value" . ,(eval sym)))
+              `(,entry-str ("value" . ,(eval sym))
+                           ("module" ,@module))
               (let* ((original-module (current-module))
                      (desired-module (find-module (string->symbol module)))
                      (value (begin (switch-module desired-module)
