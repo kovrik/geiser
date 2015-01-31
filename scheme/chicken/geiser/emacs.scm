@@ -267,13 +267,13 @@
         (cons (car path) (remove-self sym (cdr path))))))
 
     (append
-     (if (any (lambda (5sym) (eq? 5sym sym)) (geiser-r5rs-symbols))
+     (if (any (cut eq? <> sym) (geiser-r5rs-symbols))
          '((r5rs))
          '())
-     (if (any (lambda (7sym) (eq? 7sym sym)) (geiser-r7rs-small-symbols))
+     (if (any (cut eq? <> sym) (geiser-r7rs-small-symbols))
          '((r7rs))
          '())
-     (if (any (lambda (csym) (eq? csym sym)) (geiser-chicken-builtin-symbols))
+     (if (any (cut eq? <> sym) (geiser-chicken-builtin-symbols))
          '((chicken))
          '())
      (map
@@ -415,7 +415,7 @@
            (is-geiser? (form-has-geiser? str-form))
            (host-module (and (not is-module?)
                              (not is-geiser?)
-                             (any (lambda (m) (equal? module m)) (list-modules))
+                             (any (cut equal? module <>) (list-modules))
                              module)))
 
       (when (and module (not (symbol? module)))
