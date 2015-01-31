@@ -328,10 +328,15 @@
   ;; Builds a signature list from an identifier
   (define (find-signatures toplevel-module sym)
     (define str (symbol->string sym))
+
+    (define (make-module-list sym module-sym)
+      (if (null? module-sym)
+          (find-standards-with-symbol sym)
+          (cons module-sym (find-standards-with-symbol sym))))
     
     (define (fmt node)
       (let* ((entry-str (car node))
-             (module (flatten (find-standards-with-symbol sym) (cadr node)))
+             (module (cadr node))
              (rest (cddr node))
              (type (if (or (list? rest) (pair? rest)) (car rest) rest)))
         (cond
@@ -339,19 +344,18 @@
           `(,entry-str ("args" (("required" '<macro>)
                                 ("optional" '...)
                                 ("key")))
-                       ("module" ,@module)))
+                       ("module" ,@(make-module-list sym module))))
          ((or (equal? 'variable type)
               (equal? 'constant type))
           (if (null? module)
-              `(,entry-str ("value" . ,(eval sym))
-                           ("module" ,@module))
+              `(,entry-str ("value" . ,(eval sym)))
               (let* ((original-module (current-module))
                      (desired-module (find-module (string->symbol module)))
                      (value (begin (switch-module desired-module)
                                    (eval sym))))
                 (switch-module original-module)
                 `(,entry-str ("value" . ,value)
-                             ("module" ,@module)))))
+                             ("module" ,@(make-module-list sym module))))))
          (else
           (let ((reqs '())
                 (opts '())
@@ -388,7 +392,7 @@
             `(,entry-str ("args" (("required" ,@reqs)
                                   ("optional" ,@opts)
                                   ("key" ,@keys)))
-                         ("module" ,@module)))))))
+                         ("module" ,@(make-module-list sym module))))))))
 
     (define (find sym)
       (map
