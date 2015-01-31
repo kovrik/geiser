@@ -282,37 +282,44 @@
       (filter 
        (lambda (n) 
          (let ((type (node-type n)))
-           (any (lambda (t) (eq? type t)) types)))
+           (any (cut eq? type <>) types)))
        (match-nodes sym)))))
   
   ;; Builds a signature list from an identifier
-  ;; The format is:
-  ;; ((,id (args ((required [signature]) (optional) (key))) (module [module path]) [(error "not found")]) ...)
   (define (find-signatures toplevel-module sym)
     (define str (symbol->string sym))
     
     (define (fmt node)
       (let* ((entry-str (car node))
-             (exact-match? (equal? str entry-str))
              (module (cadr node))
-             (rest (cddr node)))
+             (rest (cddr node))
+             (type (if (or (list? rest) (pair? rest)) (car rest) rest)))
         (cond
-         ((equal? 'macro rest)
+         ((equal? 'macro type)
           `(,entry-str ("args" (("required" '<macro>)
                                 ("optional" '...)
                                 ("key")))
-                       ("value")
                        ("module" ,@module)))
+         ((or (equal? 'variable type)
+              (equal? 'constant type))
+          (if (null? module)
+              `(,entry-str ("value" . ,(eval sym)))
+              (let* ((original-module (current-module))
+                     (desired-module (find-module (string->symbol module)))
+                     (value (begin (switch-module desired-module)
+                                   (eval sym))))
+                (switch-module original-module)
+                `(,entry-str ("value" . ,value)
+                             ("module" ,@module)))))
          (else
           (let ((reqs '())
                 (opts '())
                 (keys '())
-                (type (if (or (list? rest) (pair? rest)) (car rest) rest))
                 (args (if (or (list? rest) (pair? rest)) (cdr rest) '())))
 
             (define (clean-arg arg)
               (string->symbol (string-substitute "(.*[^0-9]+)[0-9]+" "\\1" (symbol->string arg))))
-            
+
             (define (collect-args args #!key (reqs? #t) (opts? #f) (keys? #f))
               (when (not (null? args))
                 (cond
@@ -335,21 +342,11 @@
                  (else
                   (set! opts (list (clean-arg args) '...))))))
 
-            ;; Don't bother to clean and collect arguments if they won't be shown
-            (when exact-match?
-              (collect-args args))
+            (collect-args args)
 
-            (define value
-              (cond
-               ((not exact-match?) "<unevaluated>")
-               ((or (eq? 'variable type) (eq? 'constant type))
-                (eval sym))
-               (else (string-append "<" (symbol->string type) ">"))))
-            
             `(,entry-str ("args" (("required" ,@reqs)
                                   ("optional" ,@opts)
                                   ("key" ,@keys)))
-                         ("value" . ,value)
                          ("module" ,@module)))))))
 
     (define (find sym)
@@ -363,7 +360,7 @@
                         (string-substitute "^([^#]+)#[^#]+$" "\\1" str)
                         '())))
            (cons name (cons module (cdr s)))))
-       (describe-symbol sym)))
+       (describe-symbol sym exact?: #t)))
 
     (map fmt (find sym)))
 
