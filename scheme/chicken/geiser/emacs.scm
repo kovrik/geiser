@@ -189,7 +189,7 @@
     (if val (func val) #f))
 
   (define (make-apropos-regex prefix)
-    (string-append "^([^#]+#)*" prefix))
+    (string-append "^([^#]+#)*" (regexp-escape prefix)))
 
   (define (describe-symbol sym #!key (exact? #f))
     (let* ((str (symbol->string sym))
@@ -489,7 +489,7 @@
            (re (regexp (make-apropos-regex prefix))))
       (sort! (map (lambda (sym)
                     ;; Strip out everything before the prefix
-                    (string-substitute (string-append ".*(" prefix ".*)") "\\1" sym))
+                    (string-substitute (string-append ".*(" (regexp-escape prefix) ".*)") "\\1" sym))
                   (append (apropos-list re #:macros? #t)
                           (geiser-module-completions toplevel-module prefix)))
              string<?)))
