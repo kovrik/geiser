@@ -213,7 +213,6 @@
       (lambda ()
         (with-error-output-to-port 
          (current-output-port)
-         ;; Convert all values to a list
          thunk))))
 
   (define (maybe-call func val)
