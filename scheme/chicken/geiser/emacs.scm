@@ -341,8 +341,8 @@
              (type (if (or (list? rest) (pair? rest)) (car rest) rest)))
         (cond
          ((equal? 'macro type)
-          `(,entry-str ("args" (("required" '<macro>)
-                                ("optional" '...)
+          `(,entry-str ("args" (("required" <macro>)
+                                ("optional" ...)
                                 ("key")))
                        ("module" ,@(make-module-list sym module))))
          ((or (equal? 'variable type)
