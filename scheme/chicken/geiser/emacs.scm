@@ -39,7 +39,7 @@
        tcp
        srfi-18)
 
-  (define use-debug-log #f)
+  (define use-debug-log #t)
   
   (if use-debug-log
    (use posix))
@@ -530,7 +530,7 @@
            (re (regexp (make-apropos-regex prefix))))
       (sort! (map (lambda (sym)
                     ;; Strip out everything before the prefix
-                    (string-substitute (string-append ".*(" (regexp-escape prefix) ".*)") "\\1" sym))
+                    (string-substitute (string-append ".*(" (regexp-escape prefix) ".*)") "\\1" (symbol->string sym)))
                   (append (apropos-list re #:macros? #t)
                           (geiser-module-completions toplevel-module prefix)))
              string<?)))
