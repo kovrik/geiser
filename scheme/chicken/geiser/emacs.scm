@@ -39,7 +39,7 @@
        tcp
        srfi-18)
 
-  (define use-debug-log #t)
+  (define use-debug-log #f)
   
   (if use-debug-log
    (use posix))
